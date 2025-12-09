@@ -1,6 +1,6 @@
 # aiops-custom-agent
 
-このリポジトリは、AIOpsの可能性を検証するために、プロトタイプ作成を行う環境を作成するプロジェクトの情報を提供する。
+このリポジトリは、AIOpsの可能性を検証するために、プロトタイプ制作のためのものです。
 
 目指しているプロトタイプの特徴と機能イメージ 
 カスタマイズ性: 標準的なAIOpsツールでは対応できない、特定のシステム構成、独自の運用手順、または特殊なデータソースに対応するために設計。 
@@ -124,4 +124,3 @@ ITIL4 サービス運用ツール間連携（編集中）
 - Route53/ACM: https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-configuring.html , https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html
 
 ## 8. 付録
-

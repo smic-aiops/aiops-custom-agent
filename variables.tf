@@ -1,0 +1,1051 @@
+# General infrastructure settings
+
+variable "region" {
+  description = "AWS region to deploy into"
+  type        = string
+  default     = "ap-northeast-1"
+}
+
+variable "keycloak_base_url" {
+  description = "Base URL for Keycloak admin endpoint (defaults to https://keycloak.<hosted_zone_name>)"
+  type        = string
+  default     = null
+}
+
+variable "existing_internet_gateway_id" {
+  description = "If set, reuse this internet gateway instead of creating a new one"
+  type        = string
+  default     = null
+}
+
+variable "existing_nat_gateway_id" {
+  description = "If set, reuse this NAT gateway instead of creating a new one"
+  type        = string
+  default     = null
+}
+
+variable "efs_prevent_destroy" {
+  description = "When true, protect managed EFS file systems from destruction"
+  type        = bool
+  default     = false
+}
+
+variable "rds_deletion_protection" {
+  description = "When true, enable deletion protection on RDS instances"
+  type        = bool
+  default     = false
+}
+
+variable "rds_skip_final_snapshot" {
+  description = "When true, skip creating a final snapshot on RDS deletion (PostgreSQL)"
+  type        = bool
+  default     = true
+}
+
+variable "image_architecture" {
+  description = "Container platform/architecture (e.g., linux/amd64, linux/arm64)"
+  type        = string
+  default     = "linux/amd64"
+}
+
+variable "local_image_dir" {
+  description = "Local directory to store pulled Docker image tarballs (used by scripts)"
+  type        = string
+  default     = "./images"
+}
+
+variable "aws_profile" {
+  description = "Default AWS CLI profile to use in scripts"
+  type        = string
+  default     = "Admin-AIOps"
+}
+
+variable "ecr_namespace" {
+  description = "ECR repository namespace/prefix"
+  type        = string
+  default     = "aiops"
+}
+
+variable "create_ssm_parameters" {
+  description = "Whether modules/stack should create/update SSM parameters (set false when managed by external scripts)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_service_control" {
+  description = "Enable service control API + waiting pages"
+  type        = bool
+  default     = true
+}
+
+# Keycloak management
+
+variable "create_keycloak" {
+  description = "Whether to create Keycloak service resources"
+  type        = bool
+  default     = true
+}
+
+variable "manage_keycloak_clients" {
+  description = "Create/update Keycloak OIDC clients and store their credentials in SSM via Terraform"
+  type        = bool
+  default     = false
+}
+
+variable "keycloak_admin_username" {
+  description = "Keycloak admin username (used by Terraform to manage clients)"
+  type        = string
+  default     = "admin"
+}
+
+variable "keycloak_admin_password" {
+  description = "Keycloak admin password (used by Terraform to manage clients)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "enable_keycloak_autostop" {
+  description = "Whether to enable Keycloak idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "keycloak_desired_count" {
+  description = "Default desired count for Keycloak ECS service"
+  type        = number
+  default     = 1
+}
+
+variable "keycloak_task_cpu" {
+  description = "Override CPU units for Keycloak task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "keycloak_task_memory" {
+  description = "Override memory (MB) for Keycloak task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_keycloak" {
+  description = "ECR repository name for Keycloak"
+  type        = string
+  default     = "keycloak"
+}
+
+variable "keycloak_image_tag" {
+  description = "Keycloak image tag to use for pulls/builds"
+  type        = string
+  default     = "26.4.7"
+}
+
+variable "keycloak_smtp_username" {
+  description = "SES SMTP username for Keycloak"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "keycloak_smtp_password" {
+  description = "SES SMTP password for Keycloak"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# n8n service configuration
+
+variable "create_n8n" {
+  description = "Whether to create n8n service resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_n8n_autostop" {
+  description = "Whether to enable n8n idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_n8n_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into n8n task definition"
+  type        = bool
+  default     = true
+}
+
+variable "n8n_desired_count" {
+  description = "Default desired count for n8n ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "n8n_task_cpu" {
+  description = "Override CPU units for n8n task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "n8n_task_memory" {
+  description = "Override memory (MB) for n8n task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_n8n" {
+  description = "ECR repository name for n8n"
+  type        = string
+  default     = "n8n"
+}
+
+variable "n8n_image_tag" {
+  description = "n8n image tag to use for pulls/builds"
+  type        = string
+  default     = "1.122.4"
+}
+
+variable "n8n_smtp_username" {
+  description = "SES SMTP username for n8n"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "n8n_smtp_password" {
+  description = "SES SMTP password for n8n"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# Zulip service configuration
+
+variable "create_zulip" {
+  description = "Whether to create Zulip service resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_zulip_autostop" {
+  description = "Whether to enable Zulip idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_zulip_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into Zulip task definition"
+  type        = bool
+  default     = true
+}
+
+variable "zulip_desired_count" {
+  description = "Default desired count for Zulip ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "zulip_task_cpu" {
+  description = "Override CPU units for Zulip task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "zulip_task_memory" {
+  description = "Override memory (MB) for Zulip task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_zulip" {
+  description = "ECR repository name for Zulip"
+  type        = string
+  default     = "zulip"
+}
+
+variable "zulip_image_tag" {
+  description = "Zulip image tag to pull/build"
+  type        = string
+  default     = "11.4-0"
+}
+
+variable "zulip_environment" {
+  description = "Additional environment variables for the Zulip task definition"
+  type        = map(string)
+  default = {
+    SSL_CERTIFICATE_GENERATION = "self-signed"
+    DISABLE_HTTPS              = "True"
+  }
+}
+
+variable "zulip_missing_dictionaries" {
+  description = "Set postgresql.missing_dictionaries for Zulip when running on managed PostgreSQL without hunspell dictionaries"
+  type        = bool
+  default     = true
+}
+
+variable "zulip_smtp_username" {
+  description = "SES SMTP username for Zulip"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "zulip_smtp_password" {
+  description = "SES SMTP password for Zulip"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# Main service control
+
+variable "create_main_svc" {
+  description = "Whether to create main-svc service resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_main_svc_autostop" {
+  description = "Whether to enable main-svc idle auto-stop (reserved for future use)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_main_svc_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into main-svc task definition"
+  type        = bool
+  default     = false
+}
+
+variable "main_svc_desired_count" {
+  description = "Default desired count for main-svc ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "main_svc_task_cpu" {
+  description = "Override CPU units for main-svc task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "main_svc_task_memory" {
+  description = "Override memory (MB) for main-svc task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_main_svc" {
+  description = "ECR repository name for main-svc"
+  type        = string
+  default     = "main-svc"
+}
+
+variable "main_svc_image_tag" {
+  description = "Main-svc base image tag (nginx alpine)"
+  type        = string
+  default     = "1.29.3"
+}
+
+variable "main_svc_control_api_base_url" {
+  description = "Base URL for the main-svc control API (if externally provided)"
+  type        = string
+  default     = ""
+}
+
+# Exastro IT Automation stack
+
+variable "create_exastro_web" {
+  description = "Whether to create Exastro web server resources (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "create_exastro_api" {
+  description = "Whether to create Exastro API admin resources (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_exastro_web" {
+  description = "Flag to enable Exastro web service (used by tfvars only)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_exastro_api" {
+  description = "Flag to enable Exastro API service (used by tfvars only)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_exastro_web_autostop" {
+  description = "Whether to enable Exastro web idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_exastro_api_autostop" {
+  description = "Whether to enable Exastro API idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_exastro_web_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into Exastro web task definition"
+  type        = bool
+  default     = true
+}
+
+variable "enable_exastro_api_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into Exastro API task definition"
+  type        = bool
+  default     = true
+}
+
+variable "exastro_web_server_desired_count" {
+  description = "Default desired count for Exastro IT Automation web server ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "exastro_api_admin_desired_count" {
+  description = "Default desired count for Exastro IT Automation API admin ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "exastro_web_task_cpu" {
+  description = "Override CPU units for Exastro web task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "exastro_web_task_memory" {
+  description = "Override memory (MB) for Exastro web task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "exastro_api_task_cpu" {
+  description = "Override CPU units for Exastro API task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "exastro_api_task_memory" {
+  description = "Override memory (MB) for Exastro API task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_exastro_it_automation_web_server" {
+  description = "ECR repository name for Exastro IT Automation web server"
+  type        = string
+  default     = "exastro-it-automation-web-server"
+}
+
+variable "exastro_it_automation_web_server_image_tag" {
+  description = "Exastro IT Automation web server image (repo:tag)"
+  type        = string
+  default     = "exastro/exastro-it-automation-web-server:2.7.0"
+}
+
+variable "ecr_repo_exastro_it_automation_api_admin" {
+  description = "ECR repository name for Exastro IT Automation API admin"
+  type        = string
+  default     = "exastro-it-automation-api-admin"
+}
+
+variable "exastro_it_automation_api_admin_image_tag" {
+  description = "Exastro IT Automation API admin image (repo:tag)"
+  type        = string
+  default     = "exastro/exastro-it-automation-api-admin:2.7.0"
+}
+
+# GitLab service
+
+variable "create_gitlab" {
+  description = "Whether to create GitLab Omnibus service resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_gitlab_autostop" {
+  description = "Whether to enable GitLab idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_gitlab_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into GitLab task definition"
+  type        = bool
+  default     = true
+}
+
+variable "gitlab_desired_count" {
+  description = "Default desired count for GitLab ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "gitlab_task_cpu" {
+  description = "CPU units for GitLab task definition (default 4 vCPU)"
+  type        = number
+  default     = 2048
+}
+
+variable "gitlab_task_memory" {
+  description = "Memory (MB) for GitLab task definition"
+  type        = number
+  default     = 4096
+}
+
+variable "ecr_repo_gitlab" {
+  description = "ECR repository name for GitLab Omnibus"
+  type        = string
+  default     = "gitlab-omnibus"
+}
+
+variable "gitlab_omnibus_image_tag" {
+  description = "GitLab Omnibus image tag to pull/build"
+  type        = string
+  default     = "17.11.7-ce.0"
+}
+
+variable "gitlab_smtp_username" {
+  description = "SES SMTP username for GitLab"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "gitlab_smtp_password" {
+  description = "SES SMTP password for GitLab"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# Odoo service
+
+variable "create_odoo" {
+  description = "Whether to create Odoo service resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_odoo_autostop" {
+  description = "Whether to enable Odoo idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_odoo_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into Odoo task definition"
+  type        = bool
+  default     = true
+}
+
+variable "odoo_desired_count" {
+  description = "Default desired count for Odoo ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "odoo_task_cpu" {
+  description = "Override CPU units for Odoo task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 2048
+}
+
+variable "odoo_task_memory" {
+  description = "Override memory (MB) for Odoo task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 4096
+}
+
+variable "ecr_repo_odoo" {
+  description = "ECR repository name for Odoo"
+  type        = string
+  default     = "odoo"
+}
+
+variable "odoo_image_tag" {
+  description = "Odoo image tag to use for pulls/builds"
+  type        = string
+  default     = "17.0"
+}
+
+variable "odoo_smtp_username" {
+  description = "SES SMTP username for Odoo"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "odoo_smtp_password" {
+  description = "SES SMTP password for Odoo"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# pgAdmin service
+
+variable "create_pgadmin" {
+  description = "Whether to create pgAdmin service resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_pgadmin_autostop" {
+  description = "Whether to enable pgAdmin idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_pgadmin_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into pgAdmin task definition"
+  type        = bool
+  default     = true
+}
+
+variable "pgadmin_desired_count" {
+  description = "Default desired count for pgAdmin ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "pgadmin_task_cpu" {
+  description = "Override CPU units for pgAdmin task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "pgadmin_task_memory" {
+  description = "Override memory (MB) for pgAdmin task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_pgadmin" {
+  description = "ECR repository name for pgAdmin"
+  type        = string
+  default     = "pgadmin"
+}
+
+variable "pgadmin_image_tag" {
+  description = "Image tag for pgAdmin"
+  type        = string
+  default     = "9.10.0"
+}
+
+variable "pgadmin_smtp_username" {
+  description = "SES SMTP username for pgAdmin"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "pgadmin_smtp_password" {
+  description = "SES SMTP password for pgAdmin"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# phpMyAdmin service
+
+variable "create_phpmyadmin" {
+  description = "Whether to create phpMyAdmin service resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_phpmyadmin_autostop" {
+  description = "Whether to enable phpMyAdmin idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_phpmyadmin_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into phpMyAdmin task definition"
+  type        = bool
+  default     = false
+}
+
+variable "phpmyadmin_desired_count" {
+  description = "Default desired count for phpMyAdmin ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "phpmyadmin_task_cpu" {
+  description = "Override CPU units for phpMyAdmin task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "phpmyadmin_task_memory" {
+  description = "Override memory (MB) for phpMyAdmin task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_phpmyadmin" {
+  description = "ECR repository name for phpMyAdmin"
+  type        = string
+  default     = "phpmyadmin"
+}
+
+variable "phpmyadmin_image_tag" {
+  description = "Image tag for phpMyAdmin"
+  type        = string
+  default     = "5.2.3"
+}
+
+# GROWI service
+
+variable "create_growi" {
+  description = "Whether to create GROWI service resources (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "create_growi_docdb" {
+  description = "Whether to create a DocumentDB cluster for GROWI (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "create_growi_efs" {
+  description = "Whether to create an EFS for GROWI persistent files (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_growi_autostop" {
+  description = "Whether to enable GROWI idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_growi_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into GROWI task definition"
+  type        = bool
+  default     = true
+}
+
+variable "growi_desired_count" {
+  description = "Default desired count for GROWI ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "growi_task_cpu" {
+  description = "Override CPU units for GROWI task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "growi_task_memory" {
+  description = "Override memory (MB) for GROWI task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "growi_image_tag" {
+  description = "GROWI image tag to use for pulls/builds"
+  type        = string
+  default     = "7.3.8"
+}
+
+variable "growi_docdb_engine_version" {
+  description = "DocumentDB engine version for GROWI"
+  type        = string
+  default     = "5.0.0"
+}
+
+variable "docdb_deletion_protection" {
+  description = "Whether to enable deletion protection on the GROWI DocumentDB cluster"
+  type        = bool
+  default     = false
+}
+
+variable "docdb_skip_final_snapshot" {
+  description = "Skip creating a final snapshot when destroying the GROWI DocumentDB cluster"
+  type        = bool
+  default     = true
+}
+
+variable "growi_docdb_final_snapshot_identifier" {
+  description = "Final snapshot identifier to use when skip_final_snapshot is false for GROWI DocumentDB"
+  type        = string
+  default     = null
+}
+
+variable "growi_smtp_username" {
+  description = "SES SMTP username for GROWI"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "growi_smtp_password" {
+  description = "SES SMTP password for GROWI"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# OrangeHRM service
+
+variable "create_orangehrm" {
+  description = "Whether to create OrangeHRM service resources (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "create_orangehrm_efs" {
+  description = "Whether to create an EFS for OrangeHRM persistent files (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "create_mysql_rds" {
+  description = "Whether to create a dedicated MySQL RDS instance (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "mysql_rds_skip_final_snapshot" {
+  description = "When true, skip creating a final snapshot on MySQL RDS deletion"
+  type        = bool
+  default     = true
+}
+
+variable "enable_orangehrm_autostop" {
+  description = "Whether to enable OrangeHRM idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_orangehrm_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into OrangeHRM task definition"
+  type        = bool
+  default     = true
+}
+
+variable "orangehrm_desired_count" {
+  description = "Default desired count for OrangeHRM ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "orangehrm_task_cpu" {
+  description = "Override CPU units for OrangeHRM task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "orangehrm_task_memory" {
+  description = "Override memory (MB) for OrangeHRM task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "orangehrm_image_tag" {
+  description = "OrangeHRM image tag to use for pulls/builds"
+  type        = string
+  default     = "5.8"
+}
+
+variable "orangehrm_smtp_username" {
+  description = "SES SMTP username for OrangeHRM"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "orangehrm_smtp_password" {
+  description = "SES SMTP password for OrangeHRM"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# CMDBuild (vanilla)
+
+variable "ecr_repo_cmdbuild" {
+  description = "ECR repository name for CMDBuild (vanilla)"
+  type        = string
+  default     = "cmdbuild"
+}
+
+variable "cmdbuild_image_tag" {
+  description = "CMDBuild image tag to use for pulls/builds (application)"
+  type        = string
+  default     = "4.1.0"
+}
+
+variable "cmdbuild_smtp_username" {
+  description = "SES SMTP username for CMDBuild"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "cmdbuild_smtp_password" {
+  description = "SES SMTP password for CMDBuild"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+# CMDBuild Ready2Use
+
+variable "create_cmdbuild_r2u" {
+  description = "Whether to create CMDBuild Ready2Use resources (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "create_cmdbuild_r2u_efs" {
+  description = "Whether to create an EFS for CMDBuild Ready2Use (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_cmdbuild_r2u" {
+  description = "Flag to enable CMDBuild Ready2Use service (used by tfvars only)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_cmdbuild_r2u_autostop" {
+  description = "Whether to enable CMDBuild Ready2Use idle auto-stop (tfvars-only flag)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_cmdbuild_r2u_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into CMDBuild Ready2Use task definition"
+  type        = bool
+  default     = true
+}
+
+variable "cmdbuild_r2u_desired_count" {
+  description = "Default desired count for CMDBuild Ready2Use ECS service"
+  type        = number
+  default     = 0
+}
+
+variable "cmdbuild_r2u_task_cpu" {
+  description = "Override CPU units for CMDBuild R2U task definition (null to use ecs_task_cpu)"
+  type        = number
+  default     = 512
+}
+
+variable "cmdbuild_r2u_task_memory" {
+  description = "Override memory (MB) for CMDBuild R2U task definition (null to use ecs_task_memory)"
+  type        = number
+  default     = 1024
+}
+
+variable "ecr_repo_cmdbuild_r2u" {
+  description = "ECR repository name for CMDBuild Ready2Use"
+  type        = string
+  default     = "cmdbuild-r2u"
+}
+
+variable "cmdbuild_r2u_image_tag" {
+  description = "CMDBuild Ready2Use image tag to use for pulls/builds"
+  type        = string
+  default     = "r2u-2.4-4.1.0"
+}
+
+variable "cmdbuild_r2u_db_name" {
+  description = "Database name for CMDBuild Ready2Use"
+  type        = string
+  default     = "cmdbuild"
+}
+
+variable "cmdbuild_r2u_db_username" {
+  description = "Database username for CMDBuild Ready2Use"
+  type        = string
+  default     = "cmdbuild"
+}
+
+variable "cmdbuild_r2u_db_password" {
+  description = "Database password for CMDBuild Ready2Use (stored in SSM)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "cmdbuild_r2u_filesystem_path" {
+  description = "Container path to mount persistent volume for CMDBuild Ready2Use"
+  type        = string
+  default     = "/cmdbuild/data"
+}
+
+variable "cmdbuild_r2u_filesystem_id" {
+  description = "Existing EFS ID to mount for CMDBuild Ready2Use (if not creating new)"
+  type        = string
+  default     = null
+}
+
+variable "cmdbuild_r2u_efs_availability_zone" {
+  description = "AZ for CMDBuild Ready2Use One Zone EFS (defaults to first private subnet AZ)"
+  type        = string
+  default     = null
+}
+
+variable "cmdbuild_r2u_oidc_client_id" {
+  description = "Keycloak OIDC client ID for CMDBuild Ready2Use (stored in SSM when set)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "cmdbuild_r2u_oidc_client_secret" {
+  description = "Keycloak OIDC client secret for CMDBuild Ready2Use (stored in SSM when set)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "cmdbuild_r2u_environment" {
+  description = "Environment variables for CMDBuild Ready2Use container"
+  type        = map(string)
+  default     = null
+}
+
+variable "cmdbuild_r2u_secrets" {
+  description = "Secrets (name/valueFrom) for CMDBuild Ready2Use container"
+  type = list(object({
+    name      = string
+    valueFrom = string
+  }))
+  default = []
+}
+
+variable "cmdbuild_r2u_ssm_params" {
+  description = "SSM params to inject into CMDBuild Ready2Use container"
+  type        = map(string)
+  default     = null
+}
+
+# ECS task sizing defaults
+
+variable "ecs_task_cpu" {
+  type    = number
+  default = 512
+}
+
+variable "ecs_task_memory" {
+  type    = number
+  default = 1024
+}

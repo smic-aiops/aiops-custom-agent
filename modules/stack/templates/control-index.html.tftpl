@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>サービスコントロール</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+    p { color: #333; }
+    #cards { display: flex; flex-direction: column; gap: 1.5rem; margin: 1rem 0; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+    .card h2 { margin: 0 0 0.5rem; font-size: 1.2rem; }
+    .actions { margin: 0.5rem 0; }
+    button { margin-right: 0.5rem; padding: 0.55rem 0.9rem; }
+    .link {
+      display: inline-block;
+      margin-right: 0.5rem;
+      padding: 0.55rem 0.9rem;
+      background: #0f62fe;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .status { font-weight: bold; margin-top: 0.5rem; }
+    .health { font-size: 0.95rem; color: #444; margin-top: 0.35rem; line-height: 1.4; }
+    .group { margin-bottom: 1.5rem; }
+    .group-title { margin: 0 0 0.25rem; font-size: 1.1rem; color: #222; }
+    .ops-status { display: inline-block; margin: 0.45rem 0 0; padding: 0.25rem 0.6rem; border-radius: 4px; font-weight: 600; font-size: 0.95rem; }
+    .ops-status--active { background: #e6f4ea; color: #0f5132; }
+    .ops-status--pending { background: #f5f5f5; color: #444; }
+  </style>
+</head>
+<body>
+  <h1>サービスコントロール</h1>
+  <p>サービスコントロールAPIで各サービスの起動・停止・状態取得を確認できます。通常の運用時は、この機能をオフにしてください。</p>
+
+  <div class="grid" id="cards"></div>
+
+  <script>
+    const API_BASE = "${api_base_url}";
+    const services = [
+      { key: 'keycloak', name: 'Keycloak', host: 'keycloak', path: '/admin/', desc: 'ID管理・認証／認可・情報セキュリティ' },
+      { key: 'zulip', name: 'Zulip', host: 'zulip', desc: 'コミュニケーション、組織変革・関係性マネジメントのハブ' },
+      { key: 'growi', name: 'GROWI', host: 'growi', desc: 'ナレッジ、戦略・ポリシー・手順の文書化' },
+      { key: 'odoo', name: 'Odoo', host: 'odoo', desc: '財務・サプライヤ・CRM・ポートフォリオ／プロジェクト' },
+      { key: 'orangehrm', name: 'OrangeHRM', host: 'orangehrm', desc: 'HR・組織・要員管理' },
+      { key: 'cmdbuild-r2u', name: 'CMDBuild Ready2Use', host: 'cmdbuild', desc: 'ITSM の中核：サービス／CI／インシデント／要求／変更／SLA 等' },
+      { key: 'n8n', name: 'n8n', host: 'n8n', desc: 'サービス管理プロセスにおける自動化・ツール連携ハブ' },
+      { key: 'main_svc', name: 'main-svc', host: 'main-svc', desc: 'メインサービスのダミー' },
+      { key: 'exastro-web', name: 'Exastro ITA Web', host: 'ita-web', desc: '構成・IaC・ジョブ実行 (Web)' },
+      { key: 'exastro-api', name: 'Exastro ITA API', host: 'ita-api', desc: '構成・IaC・ジョブ実行 (API)' },
+      { key: 'gitlab', name: 'GitLab', host: 'gitlab', desc: '開発・DevOps・Issue・CI/CD' },
+      { key: 'pgadmin', name: 'pgAdmin', host: 'pgadmin', desc: 'DB プラットフォーム管理' },
+      { key: 'phpmyadmin', name: 'phpMyAdmin', host: 'phpmyadmin', desc: 'MySQL/MariaDB 管理' },
+    ];
+    const operationalKeys = new Set(['keycloak', 'zulip', 'n8n', 'pgadmin', 'phpmyadmin']);
+    const servicesWithStatus = services.map(s => ({
+      ...s,
+      opsStatus: operationalKeys.has(s.key) ? '運用中' : '未実装',
+    }));
+    const serviceMap = Object.fromEntries(servicesWithStatus.map(s => [s.key, s]));
+    const groups = [
+      { title: 'General Management（一般管理）', items: ['keycloak', 'zulip', 'growi', 'odoo', 'orangehrm'] },
+      { title: 'Service Management（サービス管理）', items: ['cmdbuild-r2u', 'n8n', 'main_svc'] },
+      { title: 'Technical Management（技術管理）', items: ['exastro-web', 'exastro-api', 'gitlab', 'pgadmin', 'phpmyadmin'] },
+    ];
+    const cardsEl = document.getElementById('cards');
+    const rootDomain = (() => {
+      const host = window.location.hostname;
+      const parts = host.split('.');
+      if (parts.length >= 3) return parts.slice(1).join('.');
+      return host;
+    })();
+
+    function log(msg) {
+      console.log(msg);
+    }
+
+    async function callApi(service, path, method = 'GET') {
+      if (!API_BASE) {
+        log('API のベース URL が設定されていません。');
+        throw new Error('API のベース URL が設定されていません。');
+      }
+      try {
+        const base = API_BASE.replace(/\/+$/, '');
+        const url = `$${base}$${path}?service=$${encodeURIComponent(service)}`;
+        const res = await fetch(url, { method });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.message || res.statusText);
+        return body;
+      } catch (err) {
+        log(`エラー: $${err.message}`);
+        throw err;
+      }
+    }
+
+    function renderHealth(service, data) {
+      const el = document.querySelector(`[data-health="$${service}"]`);
+      if (!data || !data.targetGroupHealth) {
+        el.textContent = 'TG: 情報なし';
+        return;
+      }
+      const sum = data.targetGroupHealth.summary || {};
+      el.textContent = `TG: healthy=$${sum.healthy || 0}, unhealthy=$${sum.unhealthy || 0}, total=$${sum.total || 0}`;
+    }
+
+    async function updateStatus(service) {
+      const statusEl = document.querySelector(`[data-status="$${service}"]`);
+      statusEl.textContent = '状態: 取得中...';
+      try {
+        const data = await callApi(service, '/status', 'GET');
+        statusEl.textContent = `状態: desired=$${data.desiredCount}, running=$${data.runningCount}`;
+        log(`[$${service}] 状態取得に成功: $${JSON.stringify(data)}`);
+        renderHealth(service, data);
+      } catch (_) {
+        statusEl.textContent = '状態: エラー';
+        renderHealth(service, null);
+      }
+    }
+
+    async function startSvc(service) {
+      const statusEl = document.querySelector(`[data-status="$${service}"]`);
+      statusEl.textContent = '起動中...';
+      await callApi(service, '/start', 'POST');
+      log(`[$${service}] 起動をリクエストしました`);
+      updateStatus(service);
+    }
+
+    async function stopSvc(service) {
+      const statusEl = document.querySelector(`[data-status="$${service}"]`);
+      statusEl.textContent = '停止中...';
+      await callApi(service, '/stop', 'POST');
+      log(`[$${service}] 停止をリクエストしました`);
+      updateStatus(service);
+    }
+
+    function renderCards() {
+      cardsEl.innerHTML = groups.map(g => `
+        <div class="group">
+          <h2 class="group-title">$${g.title}</h2>
+          <div class="grid">
+            $${g.items.map(key => {
+              const s = serviceMap[key];
+              if (!s) return '';
+              return `
+                <div class="card">
+                  <h2>$${s.name}</h2>
+                  <div class="ops-status ops-status--$${s.opsStatus === '運用中' ? 'active' : 'pending'}">運用ステータス：$${s.opsStatus}</div>
+                  <div class="health">$${s.desc || ''}</div>
+                  <div class="actions">
+                    <a class="link" href="https://$${s.host}.$${rootDomain}$${s.path || ''}" target="_blank" rel="noopener noreferrer">開く</a>
+                    <button data-action="start" data-service="$${s.key}">起動</button>
+                    <button data-action="stop" data-service="$${s.key}">停止</button>
+                    <button data-action="status" data-service="$${s.key}">状態取得</button>
+                  </div>
+                  <div class="status" data-status="$${s.key}">状態: -</div>
+                  <div class="health" data-health="$${s.key}">TG: -</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function bindEvents() {
+      cardsEl.addEventListener('click', (ev) => {
+        if (!(ev.target instanceof HTMLButtonElement)) return;
+        const action = ev.target.dataset.action;
+        const service = ev.target.dataset.service;
+        if (!action || !service) return;
+        if (action === 'start') startSvc(service);
+        if (action === 'stop') stopSvc(service);
+        if (action === 'status') updateStatus(service);
+      });
+    }
+
+    if (!API_BASE) {
+      renderCards();
+      Array.from(cardsEl.querySelectorAll('button')).forEach(btn => btn.disabled = true);
+      Array.from(cardsEl.querySelectorAll('.status')).forEach(el => el.textContent = '状態: API が未設定です');
+      log('Terraform の main_svc_control_api_base_url を設定するとコントロール API が有効になります。');
+    } else {
+      renderCards();
+      bindEvents();
+      servicesWithStatus.forEach(s => updateStatus(s.key));
+    }
+  </script>
+</body>
+</html>

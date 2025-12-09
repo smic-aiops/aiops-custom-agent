@@ -1,0 +1,17 @@
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+*.tfstate
+*.tfstate.*
+tfplan
+tfplan*
+tfplan_out
+tfplan_cli
+tfplan_unpack/
+
+# Local image tarballs
+images/
+modules/stack/templates/*.zip
+
+# CLI history / OS cruft
+.DS_Store

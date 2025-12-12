@@ -48,9 +48,9 @@ output "ecr_repo_zulip" {
   value       = var.ecr_repo_zulip
 }
 
-output "ecr_repo_main_svc" {
-  description = "ECR repository name for main-svc"
-  value       = var.ecr_repo_main_svc
+output "ecr_repo_sulu" {
+  description = "ECR repository name for sulu"
+  value       = var.ecr_repo_sulu
 }
 
 output "ecr_repo_gitlab" {
@@ -93,7 +93,7 @@ output "ecr_repositories" {
   value = {
     n8n         = "${var.ecr_namespace}/${var.ecr_repo_n8n}"
     zulip       = "${var.ecr_namespace}/${var.ecr_repo_zulip}"
-    main_svc    = "${var.ecr_namespace}/${var.ecr_repo_main_svc}"
+    sulu        = "${var.ecr_namespace}/${var.ecr_repo_sulu}"
     gitlab      = "${var.ecr_namespace}/${var.ecr_repo_gitlab}"
     odoo        = "${var.ecr_namespace}/${var.ecr_repo_odoo}"
     keycloak    = "${var.ecr_namespace}/${var.ecr_repo_keycloak}"
@@ -109,7 +109,7 @@ output "ecr_image_uris" {
   value = {
     n8n         = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_n8n}:latest"
     zulip       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_zulip}:latest"
-    main_svc    = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_main_svc}:latest"
+    sulu        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_sulu}:latest"
     gitlab      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_gitlab}:latest"
     odoo        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_odoo}:latest"
     keycloak    = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_keycloak}:latest"
@@ -135,9 +135,9 @@ output "zulip_image_tag" {
   value       = var.zulip_image_tag
 }
 
-output "main_svc_image_tag" {
-  description = "Main-svc (nginx) image tag"
-  value       = var.main_svc_image_tag
+output "sulu_image_tag" {
+  description = "Sulu (nginx) image tag"
+  value       = var.sulu_image_tag
 }
 
 output "keycloak_image_tag" {
@@ -215,13 +215,13 @@ output "enabled_services" {
   value       = module.stack.enabled_services
 }
 
-output "main_svc_control_api_base_url" {
-  description = "Base URL for the main-svc control API (set via var.main_svc_control_api_base_url)"
-  value       = module.stack.main_svc_control_api_base_url
+output "sulu_control_api_base_url" {
+  description = "Base URL for the sulu control API (set via var.sulu_control_api_base_url)"
+  value       = module.stack.sulu_control_api_base_url
 }
 
 output "service_control_api_base_url" {
-  description = "Base URL for the service control API (n8n/zulip/main-svc/keycloak/odoo/pgadmin/phpmyadmin/gitlab)"
+  description = "Base URL for the service control API (n8n/zulip/sulu/keycloak/odoo/pgadmin/phpmyadmin/gitlab)"
   value       = module.stack.service_control_api_base_url
 }
 
@@ -233,6 +233,11 @@ output "n8n_filesystem_id" {
 output "zulip_filesystem_id" {
   description = "EFS ID used for Zulip persistent storage (if enabled)"
   value       = module.stack.zulip_filesystem_id
+}
+
+output "sulu_filesystem_id" {
+  description = "EFS ID used for sulu persistent storage (if enabled)"
+  value       = module.stack.sulu_filesystem_id
 }
 
 output "exastro_filesystem_id" {
@@ -271,7 +276,7 @@ output "service_admin_info" {
   value       = module.stack.service_admin_info
 }
 
-output "zulip_dependencies" {
-  description = "Zulip dependency endpoints and SSM parameter names"
-  value       = module.stack.zulip_dependencies
-}
+# output "zulip_dependencies" {
+#   description = "Zulip dependency endpoints and SSM parameter names"
+#   value       = module.stack.zulip_dependencies
+# }

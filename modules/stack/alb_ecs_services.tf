@@ -6,7 +6,7 @@ locals {
   tg_zulip_name        = "${local.name_prefix}-zulip-tg"
   tg_exastro_web_name  = "${local.name_prefix}-exastro-web-tg"
   tg_exastro_api_name  = "${local.name_prefix}-exastro-api-tg"
-  tg_main_svc_name     = "${local.name_prefix}-main-svc-tg"
+  tg_sulu_name         = "${local.name_prefix}-sulu-tg"
   tg_pgadmin_name      = "${local.name_prefix}-pgadmin-tg"
   tg_phpmyadmin_name   = "${local.name_prefix}-phpmyadmin-tg"
   tg_keycloak_name     = "${local.name_prefix}-keycloak-tg"
@@ -19,7 +19,7 @@ locals {
   zulip_host           = "${local.service_subdomain_map["zulip"]}.${local.hosted_zone_name_input}"
   exastro_web_host     = "${local.service_subdomain_map["exastro_web"]}.${local.hosted_zone_name_input}"
   exastro_api_host     = "${local.service_subdomain_map["exastro_api"]}.${local.hosted_zone_name_input}"
-  main_svc_host        = "${local.service_subdomain_map["main_svc"]}.${local.hosted_zone_name_input}"
+  sulu_host            = "${local.service_subdomain_map["sulu"]}.${local.hosted_zone_name_input}"
   pgadmin_host         = "${local.service_subdomain_map["pgadmin"]}.${local.hosted_zone_name_input}"
   phpmyadmin_host      = "${local.service_subdomain_map["phpmyadmin"]}.${local.hosted_zone_name_input}"
   keycloak_host        = "${local.service_subdomain_map["keycloak"]}.${local.hosted_zone_name_input}"
@@ -159,7 +159,7 @@ resource "aws_lb_target_group" "zulip" {
 
   health_check {
     path                = "/"
-    matcher             = "200-399"
+    matcher             = "200-499" # Zulip returns 400 for invalid Host headers used by ALB health checks
     healthy_threshold   = 2
     unhealthy_threshold = 5
     timeout             = 5
@@ -223,8 +223,8 @@ resource "aws_lb_target_group" "exastro_api_admin" {
   }
 }
 
-resource "aws_lb_target_group" "main_svc" {
-  count = var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_lb_target_group" "sulu" {
+  count = var.create_ecs && var.create_sulu ? 1 : 0
 
   name_prefix = "mains-"
   port        = 80
@@ -241,7 +241,7 @@ resource "aws_lb_target_group" "main_svc" {
     interval            = 30
   }
 
-  tags = merge(local.tags, { Name = local.tg_main_svc_name })
+  tags = merge(local.tags, { Name = local.tg_sulu_name })
 
   lifecycle {
     create_before_destroy = true
@@ -817,38 +817,38 @@ resource "aws_lb_listener_rule" "exastro_api" {
   }
 }
 
-resource "aws_lb_listener_rule" "main_svc" {
-  count = var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_lb_listener_rule" "sulu" {
+  count = var.create_ecs && var.create_sulu ? 1 : 0
 
   listener_arn = aws_lb_listener.https[0].arn
   priority     = 30
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.main_svc[0].arn
+    target_group_arn = aws_lb_target_group.sulu[0].arn
   }
 
   condition {
     host_header {
-      values = [local.main_svc_host]
+      values = [local.sulu_host]
     }
   }
 }
 
-resource "aws_lb_listener_rule" "main_svc_http" {
-  count = var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_lb_listener_rule" "sulu_http" {
+  count = var.create_ecs && var.create_sulu ? 1 : 0
 
   listener_arn = aws_lb_listener.http[0].arn
   priority     = 30
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.main_svc[0].arn
+    target_group_arn = aws_lb_target_group.sulu[0].arn
   }
 
   condition {
     host_header {
-      values = [local.main_svc_host]
+      values = [local.sulu_host]
     }
   }
 }
@@ -982,8 +982,29 @@ resource "aws_lb_listener_rule" "phpmyadmin_header" {
   listener_arn = aws_lb_listener.https[0].arn
   priority     = 46
 
+  dynamic "action" {
+    for_each = var.enable_phpmyadmin_alb_oidc ? [1] : []
+    content {
+      type  = "authenticate-oidc"
+      order = 1
+      authenticate_oidc {
+        authorization_endpoint     = local.keycloak_auth_url
+        token_endpoint             = local.keycloak_token_url
+        user_info_endpoint         = local.keycloak_userinfo_url
+        issuer                     = local.keycloak_issuer_url
+        client_id                  = local.phpmyadmin_oidc_client_id_value
+        client_secret              = local.phpmyadmin_oidc_client_secret_value
+        on_unauthenticated_request = "authenticate"
+        scope                      = "openid email profile"
+        session_cookie_name        = "${local.name_prefix}-phpmyadmin-auth"
+        session_timeout            = 86400
+      }
+    }
+  }
+
   action {
     type             = "forward"
+    order            = var.enable_phpmyadmin_alb_oidc ? 2 : 1
     target_group_arn = aws_lb_target_group.phpmyadmin[0].arn
   }
 
@@ -1019,8 +1040,29 @@ resource "aws_lb_listener_rule" "phpmyadmin" {
   listener_arn = aws_lb_listener.https[0].arn
   priority     = 52
 
+  dynamic "action" {
+    for_each = var.enable_phpmyadmin_alb_oidc ? [1] : []
+    content {
+      type  = "authenticate-oidc"
+      order = 1
+      authenticate_oidc {
+        authorization_endpoint     = local.keycloak_auth_url
+        token_endpoint             = local.keycloak_token_url
+        user_info_endpoint         = local.keycloak_userinfo_url
+        issuer                     = local.keycloak_issuer_url
+        client_id                  = local.phpmyadmin_oidc_client_id_value
+        client_secret              = local.phpmyadmin_oidc_client_secret_value
+        on_unauthenticated_request = "authenticate"
+        scope                      = "openid email profile"
+        session_cookie_name        = "${local.name_prefix}-phpmyadmin-auth"
+        session_timeout            = 86400
+      }
+    }
+  }
+
   action {
     type             = "forward"
+    order            = var.enable_phpmyadmin_alb_oidc ? 2 : 1
     target_group_arn = aws_lb_target_group.phpmyadmin[0].arn
   }
 
@@ -1251,9 +1293,24 @@ resource "aws_lb_listener_rule" "phpmyadmin_http_header" {
   listener_arn = aws_lb_listener.http[0].arn
   priority     = 46
 
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.phpmyadmin[0].arn
+  dynamic "action" {
+    for_each = var.enable_phpmyadmin_alb_oidc ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_302"
+      }
+    }
+  }
+
+  dynamic "action" {
+    for_each = var.enable_phpmyadmin_alb_oidc ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.phpmyadmin[0].arn
+    }
   }
 
   condition {
@@ -1288,9 +1345,24 @@ resource "aws_lb_listener_rule" "phpmyadmin_http" {
   listener_arn = aws_lb_listener.http[0].arn
   priority     = 52
 
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.phpmyadmin[0].arn
+  dynamic "action" {
+    for_each = var.enable_phpmyadmin_alb_oidc ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_302"
+      }
+    }
+  }
+
+  dynamic "action" {
+    for_each = var.enable_phpmyadmin_alb_oidc ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.phpmyadmin[0].arn
+    }
   }
 
   condition {
@@ -1481,11 +1553,11 @@ resource "aws_route53_record" "phpmyadmin" {
   }
 }
 
-resource "aws_route53_record" "main_svc" {
-  count = var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_route53_record" "sulu" {
+  count = var.create_ecs && var.create_sulu ? 1 : 0
 
   zone_id         = local.hosted_zone_id
-  name            = local.main_svc_host
+  name            = local.sulu_host
   type            = "A"
   allow_overwrite = true
 
@@ -1667,14 +1739,15 @@ resource "aws_ecs_service" "exastro_api_admin" {
   depends_on = [aws_lb_listener.https]
 }
 
-resource "aws_ecs_service" "main_svc" {
-  count = var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_ecs_service" "sulu" {
+  count = var.create_ecs && var.create_sulu ? 1 : 0
 
-  name                   = "${local.name_prefix}-main-svc"
+  name                   = "${local.name_prefix}-sulu"
   cluster                = aws_ecs_cluster.this[0].id
-  task_definition        = aws_ecs_task_definition.main_svc[0].arn
-  desired_count          = var.main_svc_desired_count
+  task_definition        = aws_ecs_task_definition.sulu[0].arn
+  desired_count          = var.sulu_desired_count
   launch_type            = "FARGATE"
+  health_check_grace_period_seconds = var.sulu_health_check_grace_period_seconds
   enable_execute_command = true
 
   network_configuration {
@@ -1684,12 +1757,12 @@ resource "aws_ecs_service" "main_svc" {
   }
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.main_svc[0].arn
-    container_name   = "main-svc"
+    target_group_arn = aws_lb_target_group.sulu[0].arn
+    container_name   = "sulu"
     container_port   = 80
   }
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-main-svc-svc" })
+  tags = merge(local.tags, { Name = "${local.name_prefix}-sulu-svc" })
 
   depends_on = [aws_lb_listener.https]
 }

@@ -1,20 +1,20 @@
 locals {
-  control_api_name       = "${local.name_prefix}-main-svc-control-api"
-  control_lambda_name    = "${local.name_prefix}-main-svc-control"
-  control_lambda_role    = "${local.name_prefix}-main-svc-control-lambda"
+  control_api_name       = "${local.name_prefix}-sulu-control-api"
+  control_lambda_name    = "${local.name_prefix}-sulu-control"
+  control_lambda_role    = "${local.name_prefix}-sulu-control-lambda"
   control_api_stage_name = "$default"
-  main_svc_service_name  = "${local.name_prefix}-main-svc"
+  sulu_service_name      = "${local.name_prefix}-sulu"
   ecs_cluster_arn        = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${local.ecs_cluster_name}"
-  main_svc_service_arn   = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-main-svc"
+  sulu_service_arn       = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-sulu"
 }
 
-data "archive_file" "main_svc_control_lambda" {
+data "archive_file" "sulu_control_lambda" {
   type        = "zip"
-  source_file = "${path.module}/templates/main_svc_control_lambda.py"
-  output_path = "${path.module}/templates/main_svc_control_lambda.zip"
+  source_file = "${path.module}/templates/sulu_control_lambda.py"
+  output_path = "${path.module}/templates/sulu_control_lambda.zip"
 }
 
-data "aws_iam_policy_document" "main_svc_control_assume" {
+data "aws_iam_policy_document" "sulu_control_assume" {
   statement {
     actions = ["sts:AssumeRole"]
 
@@ -25,16 +25,16 @@ data "aws_iam_policy_document" "main_svc_control_assume" {
   }
 }
 
-resource "aws_iam_role" "main_svc_control" {
-  count              = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_iam_role" "sulu_control" {
+  count              = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
   name               = local.control_lambda_role
-  assume_role_policy = data.aws_iam_policy_document.main_svc_control_assume.json
+  assume_role_policy = data.aws_iam_policy_document.sulu_control_assume.json
 
   tags = merge(local.tags, { Name = local.control_lambda_role })
 }
 
-data "aws_iam_policy_document" "main_svc_control_inline" {
-  count = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
+data "aws_iam_policy_document" "sulu_control_inline" {
+  count = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
 
   statement {
     actions = [
@@ -42,7 +42,7 @@ data "aws_iam_policy_document" "main_svc_control_inline" {
       "ecs:UpdateService"
     ]
     resources = [
-      local.main_svc_service_arn,
+      local.sulu_service_arn,
       local.ecs_cluster_arn
     ]
   }
@@ -57,49 +57,49 @@ data "aws_iam_policy_document" "main_svc_control_inline" {
   }
 }
 
-resource "aws_iam_policy" "main_svc_control" {
-  count  = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
-  name   = "${local.name_prefix}-main-svc-control"
-  policy = data.aws_iam_policy_document.main_svc_control_inline[0].json
+resource "aws_iam_policy" "sulu_control" {
+  count  = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
+  name   = "${local.name_prefix}-sulu-control"
+  policy = data.aws_iam_policy_document.sulu_control_inline[0].json
 }
 
-resource "aws_iam_role_policy_attachment" "main_svc_control_basic" {
-  count      = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
-  role       = aws_iam_role.main_svc_control[0].name
+resource "aws_iam_role_policy_attachment" "sulu_control_basic" {
+  count      = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
+  role       = aws_iam_role.sulu_control[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy_attachment" "main_svc_control_inline" {
-  count      = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
-  role       = aws_iam_role.main_svc_control[0].name
-  policy_arn = aws_iam_policy.main_svc_control[0].arn
+resource "aws_iam_role_policy_attachment" "sulu_control_inline" {
+  count      = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
+  role       = aws_iam_role.sulu_control[0].name
+  policy_arn = aws_iam_policy.sulu_control[0].arn
 }
 
-resource "aws_lambda_function" "main_svc_control" {
-  count = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_lambda_function" "sulu_control" {
+  count = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
 
   function_name = local.control_lambda_name
-  role          = aws_iam_role.main_svc_control[0].arn
-  handler       = "main_svc_control_lambda.handler"
+  role          = aws_iam_role.sulu_control[0].arn
+  handler       = "sulu_control_lambda.handler"
   runtime       = "python3.12"
   timeout       = 10
 
-  filename         = data.archive_file.main_svc_control_lambda.output_path
-  source_code_hash = data.archive_file.main_svc_control_lambda.output_base64sha256
+  filename         = data.archive_file.sulu_control_lambda.output_path
+  source_code_hash = data.archive_file.sulu_control_lambda.output_base64sha256
 
   environment {
     variables = {
       CLUSTER_ARN   = local.ecs_cluster_arn
-      SERVICE_NAME  = local.main_svc_service_name
-      START_DESIRED = tostring(var.main_svc_desired_count)
+      SERVICE_NAME  = local.sulu_service_name
+      START_DESIRED = tostring(var.sulu_desired_count)
     }
   }
 
   tags = merge(local.tags, { Name = local.control_lambda_name })
 }
 
-resource "aws_apigatewayv2_api" "main_svc_control" {
-  count = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_apigatewayv2_api" "sulu_control" {
+  count = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
 
   name          = local.control_api_name
   protocol_type = "HTTP"
@@ -113,44 +113,44 @@ resource "aws_apigatewayv2_api" "main_svc_control" {
   tags = merge(local.tags, { Name = local.control_api_name })
 }
 
-resource "aws_apigatewayv2_integration" "main_svc_control" {
-  count = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_apigatewayv2_integration" "sulu_control" {
+  count = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
 
-  api_id                 = aws_apigatewayv2_api.main_svc_control[0].id
+  api_id                 = aws_apigatewayv2_api.sulu_control[0].id
   integration_type       = "AWS_PROXY"
   integration_method     = "POST"
-  integration_uri        = aws_lambda_function.main_svc_control[0].invoke_arn
+  integration_uri        = aws_lambda_function.sulu_control[0].invoke_arn
   payload_format_version = "2.0"
 }
 
-resource "aws_apigatewayv2_route" "main_svc_control" {
-  for_each = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? {
+resource "aws_apigatewayv2_route" "sulu_control" {
+  for_each = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? {
     "GET /status" = "GET /status",
     "POST /start" = "POST /start",
     "POST /stop"  = "POST /stop"
   } : {}
 
-  api_id    = aws_apigatewayv2_api.main_svc_control[0].id
+  api_id    = aws_apigatewayv2_api.sulu_control[0].id
   route_key = each.value
-  target    = "integrations/${aws_apigatewayv2_integration.main_svc_control[0].id}"
+  target    = "integrations/${aws_apigatewayv2_integration.sulu_control[0].id}"
 }
 
-resource "aws_apigatewayv2_stage" "main_svc_control" {
-  count = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_apigatewayv2_stage" "sulu_control" {
+  count = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
 
-  api_id      = aws_apigatewayv2_api.main_svc_control[0].id
+  api_id      = aws_apigatewayv2_api.sulu_control[0].id
   name        = local.control_api_stage_name
   auto_deploy = true
 
   tags = merge(local.tags, { Name = "${local.control_api_name}-stage" })
 }
 
-resource "aws_lambda_permission" "main_svc_control" {
-  count = var.enable_main_svc_control_api && var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_lambda_permission" "sulu_control" {
+  count = var.enable_sulu_control_api && var.create_ecs && var.create_sulu ? 1 : 0
 
-  statement_id  = "AllowAPIGatewayInvokeMainSvcControl"
+  statement_id  = "AllowAPIGatewayInvokeSuluControl"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.main_svc_control[0].function_name
+  function_name = aws_lambda_function.sulu_control[0].function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.main_svc_control[0].execution_arn}/*/*"
+  source_arn    = "${aws_apigatewayv2_api.sulu_control[0].execution_arn}/*/*"
 }

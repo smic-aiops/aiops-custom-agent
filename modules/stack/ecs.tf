@@ -46,10 +46,39 @@ data "aws_iam_policy_document" "ecs_execution_ssm" {
     resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/*"]
   }
 
-  # SecureString の復号を確実に許可（AWS マネージドキー alias/aws/ssm）
+  # ECS Exec セッション確立に必要な SSM Messages
   statement {
-    actions   = ["kms:Decrypt"]
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+      "ssm:UpdateInstanceInformation"
+    ]
+    resources = ["*"]
+  }
+
+  # SecureString の復号とセッション暗号化で使用されるキー（AWS マネージドキー alias/aws/ssm）
+  statement {
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey"
+    ]
     resources = ["arn:aws:kms:${var.region}:${data.aws_caller_identity.current.account_id}:alias/aws/ssm"]
+  }
+
+  statement {
+    actions = [
+      "ssm:StartSession",
+      "ssm:DescribeSessions",
+      "ssm:GetConnectionStatus"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions   = ["ecs:ExecuteCommand"]
+    resources = ["*"]
   }
 }
 
@@ -104,6 +133,27 @@ data "aws_iam_policy_document" "ecs_task_ssm" {
       "ssm:GetParametersByPath"
     ]
     resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/*"]
+  }
+
+  # ECS Exec セッション確立に必要な SSM Messages
+  statement {
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+      "ssm:UpdateInstanceInformation"
+    ]
+    resources = ["*"]
+  }
+
+  # セッション暗号化で使用されるキー（AWS マネージドキー alias/aws/ssm）
+  statement {
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey"
+    ]
+    resources = ["arn:aws:kms:${var.region}:${data.aws_caller_identity.current.account_id}:alias/aws/ssm"]
   }
 }
 

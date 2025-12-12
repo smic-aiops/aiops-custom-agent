@@ -1,8 +1,10 @@
 <!doctype html>
 <html lang="ja">
 <head>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Language" content="ja" />
   <title>サービスコントロール</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
@@ -32,16 +34,40 @@
     .ops-status { display: inline-block; margin: 0.45rem 0 0; padding: 0.25rem 0.6rem; border-radius: 4px; font-weight: 600; font-size: 0.95rem; }
     .ops-status--active { background: #e6f4ea; color: #0f5132; }
     .ops-status--pending { background: #f5f5f5; color: #444; }
+    .schedule { margin-top: 0.8rem; padding-top: 0.75rem; border-top: 1px dashed #ddd; display: flex; flex-direction: column; gap: 0.4rem; }
+    .auto-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.95rem; font-weight: 600; }
+    .schedule-inputs { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.9rem; }
+    .schedule-inputs label { display: flex; align-items: center; gap: 0.2rem; }
+    .schedule-inputs input { padding: 0.25rem 0.35rem; font-size: 0.9rem; }
+    .idle-field.hidden { display: none; }
+    .schedule-status { font-size: 0.85rem; color: #444; }
+    .auth-status { font-size: 0.95rem; color: #0f5132; background: #e4f0e5; padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid #cfe3ce; margin-bottom: 1rem; }
+    .timezone-note { font-size: 0.9rem; color: #555; margin-top: 0.25rem; }
+    .schedule-hint { font-size: 0.8rem; color: #666; margin-top: 0.35rem; }
   </style>
 </head>
 <body>
   <h1>サービスコントロール</h1>
-  <p>サービスコントロールAPIで各サービスの起動・停止・状態取得を確認できます。通常の運用時は、この機能をオフにしてください。</p>
+  <p>サービスコントロールAPIで各サービスの起動・停止・状態取得を確認できます。自動起動・停止がオンになっていると、その指定時間中はスケジュールされた起動・停止の制御が優先されるため、通常のアイドル検知による自動停止（アイドル機能）は動作しません。</p>
+  <p class="timezone-note" id="jst-clock">現在時刻 (JST) を読み込み中...</p>
+
+  <div id="auth-status" class="auth-status">認証なしで利用しています</div>
+  <div id="login-container"></div>
 
   <div class="grid" id="cards"></div>
 
   <script>
     const API_BASE = "${api_base_url}";
+    const KEYCLOAK_CLIENT_ID = "${keycloak_client_id}";
+    const KEYCLOAK_BASE_URL = "${keycloak_base_url}";
+    const KEYCLOAK_REALM = "${keycloak_realm}";
+    const API_BASE_CLEAN = API_BASE ? API_BASE.replace(/\/+$/, '') : '';
+    const KEYCLOAK_BASE_CLEAN = KEYCLOAK_BASE_URL ? KEYCLOAK_BASE_URL.replace(/\/+$/, '') : '';
+    const KEYCLOAK_REALM_CLEAN = KEYCLOAK_REALM ? KEYCLOAK_REALM.replace(/^\/+|\/+$/g, '') : '';
+    const KEYCLOAK_TOKEN_ENDPOINT = KEYCLOAK_BASE_CLEAN && KEYCLOAK_REALM_CLEAN
+      ? `$${KEYCLOAK_BASE_CLEAN}/realms/$${KEYCLOAK_REALM_CLEAN}/protocol/openid-connect/token`
+      : '';
+    const TOKEN_REFRESH_MS = 5 * 60 * 1000;
     const services = [
       { key: 'keycloak', name: 'Keycloak', host: 'keycloak', path: '/admin/', desc: 'ID管理・認証／認可・情報セキュリティ' },
       { key: 'zulip', name: 'Zulip', host: 'zulip', desc: 'コミュニケーション、組織変革・関係性マネジメントのハブ' },
@@ -50,45 +76,283 @@
       { key: 'orangehrm', name: 'OrangeHRM', host: 'orangehrm', desc: 'HR・組織・要員管理' },
       { key: 'cmdbuild-r2u', name: 'CMDBuild Ready2Use', host: 'cmdbuild', desc: 'ITSM の中核：サービス／CI／インシデント／要求／変更／SLA 等' },
       { key: 'n8n', name: 'n8n', host: 'n8n', desc: 'サービス管理プロセスにおける自動化・ツール連携ハブ' },
-      { key: 'main_svc', name: 'main-svc', host: 'main-svc', desc: 'メインサービスのダミー' },
+      { key: 'sulu', name: 'Sulu', host: 'sulu', desc: 'メインサービスのダミー' },
       { key: 'exastro-web', name: 'Exastro ITA Web', host: 'ita-web', desc: '構成・IaC・ジョブ実行 (Web)' },
       { key: 'exastro-api', name: 'Exastro ITA API', host: 'ita-api', desc: '構成・IaC・ジョブ実行 (API)' },
       { key: 'gitlab', name: 'GitLab', host: 'gitlab', desc: '開発・DevOps・Issue・CI/CD' },
       { key: 'pgadmin', name: 'pgAdmin', host: 'pgadmin', desc: 'DB プラットフォーム管理' },
       { key: 'phpmyadmin', name: 'phpMyAdmin', host: 'phpmyadmin', desc: 'MySQL/MariaDB 管理' },
     ];
+    const serviceAutoStopCapabilities = ${service_control_autostop_flags};
     const operationalKeys = new Set(['keycloak', 'zulip', 'n8n', 'pgadmin', 'phpmyadmin']);
+    const UI_LOCALE = 'ja-JP';
+    const UI_TIMEZONE = 'Asia/Tokyo';
+    const timezoneFormatter = new Intl.DateTimeFormat(UI_LOCALE, {
+      dateStyle: 'long',
+      timeStyle: 'medium',
+      timeZone: UI_TIMEZONE,
+    });
+    const MINUTES_PER_DAY = 24 * 60;
+
+    function parseTimeValue(value) {
+      if (typeof value !== 'string') return null;
+      const parts = value.split(':');
+      if (parts.length !== 2) return null;
+      const hours = Number(parts[0]);
+      const minutes = Number(parts[1]);
+      if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+      return hours * 60 + minutes;
+    }
+
+    function formatTimeValue(minutes) {
+      if (typeof minutes !== 'number' || Number.isNaN(minutes)) return '';
+      const normalized = ((Math.round(minutes) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+      const hours = Math.floor(normalized / 60);
+      const mins = normalized % 60;
+      const hoursStr = hours.toString().padStart(2, '0');
+      const minsStr = mins.toString().padStart(2, '0');
+      return hoursStr + ':' + minsStr;
+    }
+
+    function normalizeTime(value) {
+      const minutes = parseTimeValue(value);
+      return minutes === null ? '' : formatTimeValue(minutes);
+    }
+
+    const DEFAULT_START_JST = '09:00';
+    const DEFAULT_STOP_JST = '22:00';
+    const DEFAULT_IDLE_MINUTES = 60;
+    const jstClockEl = document.getElementById('jst-clock');
+    function updateJstClock() {
+      if (!jstClockEl) return;
+      jstClockEl.textContent = `現在時刻 (JST): $${timezoneFormatter.format(new Date())}`;
+    }
+    if (jstClockEl) {
+      updateJstClock();
+      setInterval(updateJstClock, 1000);
+    }
     const servicesWithStatus = services.map(s => ({
       ...s,
       opsStatus: operationalKeys.has(s.key) ? '運用中' : '未実装',
+      autostopSupported: Boolean(serviceAutoStopCapabilities[s.key]),
     }));
     const serviceMap = Object.fromEntries(servicesWithStatus.map(s => [s.key, s]));
     const groups = [
       { title: 'General Management（一般管理）', items: ['keycloak', 'zulip', 'growi', 'odoo', 'orangehrm'] },
-      { title: 'Service Management（サービス管理）', items: ['cmdbuild-r2u', 'n8n', 'main_svc'] },
+      { title: 'Service Management（サービス管理）', items: ['cmdbuild-r2u', 'n8n', 'sulu'] },
       { title: 'Technical Management（技術管理）', items: ['exastro-web', 'exastro-api', 'gitlab', 'pgadmin', 'phpmyadmin'] },
     ];
     const cardsEl = document.getElementById('cards');
+    const scheduleState = new Map();
     const rootDomain = (() => {
       const host = window.location.hostname;
       const parts = host.split('.');
       if (parts.length >= 3) return parts.slice(1).join('.');
       return host;
     })();
+    const authStatusEl = document.getElementById('auth-status');
+    const loginContainer = document.getElementById('login-container');
+    let accessToken = null;
+    let refreshToken = null;
+    let tokenExpiresAt = 0;
+
+    function setAuthMessage(message) {
+      if (authStatusEl) {
+        authStatusEl.textContent = message;
+      }
+    }
+
+    function persistTokens() {
+      if (accessToken) {
+        const payload = { accessToken, refreshToken, tokenExpiresAt };
+        sessionStorage.setItem('service_control_tokens', JSON.stringify(payload));
+      } else {
+        sessionStorage.removeItem('service_control_tokens');
+      }
+    }
+
+    function restoreTokens() {
+      try {
+        const raw = sessionStorage.getItem('service_control_tokens');
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        accessToken = parsed.accessToken || null;
+        refreshToken = parsed.refreshToken || null;
+        tokenExpiresAt = parsed.tokenExpiresAt || 0;
+      } catch {
+        accessToken = null;
+        refreshToken = null;
+        tokenExpiresAt = 0;
+      }
+    }
+
+    function clearTokens() {
+      accessToken = null;
+      refreshToken = null;
+      tokenExpiresAt = 0;
+      persistTokens();
+    }
+
+    async function requestToken(payload) {
+      if (!KEYCLOAK_TOKEN_ENDPOINT) {
+        throw new Error('Keycloak のトークンエンドポイントが構成されていません。');
+      }
+      const params = new URLSearchParams();
+      params.append('client_id', KEYCLOAK_CLIENT_ID);
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          params.append(key, String(value));
+        }
+      });
+      const res = await fetch(KEYCLOAK_TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = data.error_description || data.error || data.message || res.statusText;
+        throw new Error(message || 'トークンの取得に失敗しました');
+      }
+      return data;
+    }
+
+    async function refreshAccessTokenIfNeeded() {
+      if (!accessToken) return;
+      const now = Date.now();
+      if (tokenExpiresAt && tokenExpiresAt - now > 60 * 1000) {
+        return;
+      }
+      if (!refreshToken) return;
+      let data;
+      try {
+        data = await requestToken({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        });
+      } catch {
+        clearTokens();
+        throw new Error('トークンの更新に失敗しました。再ログインしてください。');
+      }
+      accessToken = data.access_token || null;
+      refreshToken = data.refresh_token || null;
+      const expiresIn = data.expires_in || 0;
+      tokenExpiresAt = Date.now() + expiresIn * 1000;
+      persistTokens();
+    }
+
+    async function performLogin(username, password) {
+      let data;
+      try {
+        data = await requestToken({
+          grant_type: 'password',
+          username,
+          password,
+        });
+      } catch (err) {
+        throw new Error(err?.message || '認証に失敗しました');
+      }
+      accessToken = data.access_token || null;
+      refreshToken = data.refresh_token || null;
+      const expiresIn = data.expires_in || 0;
+      tokenExpiresAt = Date.now() + expiresIn * 1000;
+      persistTokens();
+    }
+
+    function renderLoginForm(message = '') {
+      cardsEl.innerHTML = '';
+      const note = message ? `<div style="color:#b00020; margin-bottom:0.5rem;">$${message}</div>` : '';
+      loginContainer.innerHTML = `
+        <div class="card">
+          <h2>ログイン</h2>
+          $${note}
+          <form id="login-form">
+            <div style="margin-bottom:0.5rem;">
+              <label>ユーザー名<br><input type="text" name="username" required style="width:100%; padding:0.4rem;"></label>
+            </div>
+            <div style="margin-bottom:0.5rem;">
+              <label>パスワード<br><input type="password" name="password" required style="width:100%; padding:0.4rem;"></label>
+            </div>
+            <button type="submit">ログイン</button>
+          </form>
+        </div>
+      `;
+      const form = document.getElementById('login-form');
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const formData = new FormData(form);
+        const username = (formData.get('username') || '').toString();
+        const password = (formData.get('password') || '').toString();
+        setAuthMessage('ログイン処理中...');
+        try {
+          await performLogin(username, password);
+          setAuthMessage(`ログイン済み: $${username}`);
+          loginContainer.innerHTML = '';
+          renderCards();
+          bindEvents();
+          servicesWithStatus.forEach(s => updateStatus(s.key));
+          servicesWithStatus.forEach(s => fetchSchedule(s.key));
+          scheduleTokenRefresh();
+        } catch (e) {
+          clearTokens();
+          setAuthMessage('ログインに失敗しました');
+          renderLoginForm(e?.message);
+        }
+      });
+    }
+
+    function renderLogoutButton() {
+      const btnId = 'logout-btn';
+      let btn = document.getElementById(btnId);
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.id = btnId;
+        btn.style.marginLeft = '0.5rem';
+        authStatusEl.after(btn);
+      }
+      btn.textContent = 'ログアウト';
+      btn.onclick = () => {
+        clearTokens();
+        setAuthMessage('ログアウトしました');
+        btn.remove();
+        renderLoginForm();
+      };
+    }
+
+    function scheduleTokenRefresh() {
+      setInterval(() => {
+        refreshAccessTokenIfNeeded().catch((err) => {
+          console.warn(err.message);
+        });
+      }, TOKEN_REFRESH_MS);
+    }
 
     function log(msg) {
       console.log(msg);
     }
 
-    async function callApi(service, path, method = 'GET') {
+    async function callApi(service, path, method = 'GET', payload = null) {
       if (!API_BASE) {
         log('API のベース URL が設定されていません。');
         throw new Error('API のベース URL が設定されていません。');
       }
+      if (!accessToken) {
+        throw new Error('ログインしてください');
+      }
+      await refreshAccessTokenIfNeeded();
       try {
-        const base = API_BASE.replace(/\/+$/, '');
+        const base = API_BASE_CLEAN || API_BASE;
         const url = `$${base}$${path}?service=$${encodeURIComponent(service)}`;
-        const res = await fetch(url, { method });
+        const headers = payload !== null ? { 'Content-Type': 'application/json' } : {};
+        headers.Authorization = `Bearer $${accessToken}`;
+        const options = { method };
+        if (Object.keys(headers).length > 0) {
+          options.headers = headers;
+        }
+        if (payload !== null) {
+          options.body = JSON.stringify(payload);
+        }
+        const res = await fetch(url, options);
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.message || res.statusText);
         return body;
@@ -106,6 +370,57 @@
       }
       const sum = data.targetGroupHealth.summary || {};
       el.textContent = `TG: healthy=$${sum.healthy || 0}, unhealthy=$${sum.unhealthy || 0}, total=$${sum.total || 0}`;
+    }
+
+    function applyScheduleToUI(service, schedule) {
+      const checkbox = cardsEl.querySelector('[data-action="toggle-auto"][data-service="' + service + '"]');
+      const startInput = cardsEl.querySelector('[data-action="set-start"][data-service="' + service + '"]');
+      const stopInput = cardsEl.querySelector('[data-action="set-stop"][data-service="' + service + '"]');
+      const idleInput = cardsEl.querySelector('[data-action="set-idle"][data-service="' + service + '"]');
+      const statusEl = cardsEl.querySelector('[data-schedule-status="' + service + '"]');
+      const enabled = Boolean(schedule && schedule.enabled);
+      const startValue = normalizeTime((schedule && schedule.start_time) || DEFAULT_START_JST) || DEFAULT_START_JST;
+      const stopValue = normalizeTime((schedule && schedule.stop_time) || DEFAULT_STOP_JST) || DEFAULT_STOP_JST;
+      const idleValue = (schedule && schedule.idle_minutes) || DEFAULT_IDLE_MINUTES;
+      if (checkbox) checkbox.checked = Boolean(enabled);
+      if (startInput) {
+        startInput.value = startValue;
+        startInput.disabled = !enabled;
+      }
+      if (stopInput) {
+        stopInput.value = stopValue;
+        stopInput.disabled = !enabled;
+      }
+      if (idleInput) {
+        idleInput.value = idleValue;
+      }
+      updateIdleField(service);
+      if (statusEl) {
+        statusEl.textContent = enabled
+          ? `自動 (JST): $${startValue} → $${stopValue} ($${idleValue}分アイドル)`
+          : '自動起動/停止はオフ';
+      }
+      scheduleState.set(service, schedule || {});
+    }
+
+    async function fetchSchedule(service) {
+      try {
+        const schedule = await callApi(service, '/schedule', 'GET');
+        applyScheduleToUI(service, schedule);
+      } catch {
+        const statusEl = cardsEl.querySelector('[data-schedule-status="' + service + '"]');
+        if (statusEl) statusEl.textContent = 'スケジュール情報を取得できません';
+      }
+    }
+
+    async function sendScheduleUpdate(service, payload) {
+      try {
+        const updated = await callApi(service, '/schedule', 'POST', payload);
+        applyScheduleToUI(service, updated);
+      } catch {
+        const statusEl = cardsEl.querySelector('[data-schedule-status="' + service + '"]');
+        if (statusEl) statusEl.textContent = 'スケジュール更新に失敗';
+      }
     }
 
     async function updateStatus(service) {
@@ -158,6 +473,25 @@
                     <button data-action="status" data-service="$${s.key}">状態取得</button>
                   </div>
                   <div class="status" data-status="$${s.key}">状態: -</div>
+                  <div class="schedule">
+                    <label class="auto-toggle">
+                      <input type="checkbox" data-action="toggle-auto" data-service="$${s.key}">
+                      自動起動・停止
+                    </label>
+                    <div class="schedule-inputs">
+                      <label>起動
+                        <input type="time" data-action="set-start" data-service="$${s.key}" value="09:00" disabled>
+                      </label>
+                      <label>停止
+                        <input type="time" data-action="set-stop" data-service="$${s.key}" value="22:00" disabled>
+                      </label>
+                      <label class="idle-field">アイドル
+                        <input type="number" min="1" data-action="set-idle" data-service="$${s.key}" value="60" disabled>分
+                      </label>
+                    </div>
+                    <div class="schedule-status" data-schedule-status="$${s.key}">スケジュール情報を読み込み中...</div>
+                    <div class="schedule-hint">表示/入力/送信とも日本標準時 (JST) です。</div>
+                  </div>
                   <div class="health" data-health="$${s.key}">TG: -</div>
                 </div>
               `;
@@ -165,6 +499,18 @@
           </div>
         </div>
       `).join('');
+      servicesWithStatus.forEach(s => updateIdleField(s.key));
+    }
+
+    function updateIdleField(service) {
+      const idleInput = cardsEl.querySelector(`[data-action="set-idle"][data-service="$${service}"]`);
+      if (!idleInput) return;
+      const idleLabel = idleInput.closest('label');
+      const idleSupported = Boolean(serviceAutoStopCapabilities[service]);
+      idleInput.disabled = !idleSupported;
+      if (idleLabel) {
+        idleLabel.classList.toggle('hidden', !idleSupported);
+      }
     }
 
     function bindEvents() {
@@ -177,17 +523,60 @@
         if (action === 'stop') stopSvc(service);
         if (action === 'status') updateStatus(service);
       });
+      cardsEl.addEventListener('change', (ev) => {
+        if (!(ev.target instanceof HTMLInputElement)) return;
+        const action = ev.target.dataset.action;
+        const service = ev.target.dataset.service;
+        if (!action || !service) return;
+        if (action === 'toggle-auto') {
+          sendScheduleUpdate(service, { enabled: ev.target.checked });
+          return;
+        }
+        if (action === 'set-start') {
+          const converted = ev.target.value ? normalizeTime(ev.target.value) : '';
+          if (converted) {
+            sendScheduleUpdate(service, { start_time: converted });
+          }
+          return;
+        }
+        if (action === 'set-stop') {
+          const converted = ev.target.value ? normalizeTime(ev.target.value) : '';
+          if (converted) {
+            sendScheduleUpdate(service, { stop_time: converted });
+          }
+          return;
+        }
+        if (action === 'set-idle') {
+          if (!serviceAutoStopCapabilities[service]) return;
+          if (ev.target.value !== '') {
+            sendScheduleUpdate(service, { idle_minutes: Number(ev.target.value) });
+          }
+        }
+      });
     }
 
     if (!API_BASE) {
       renderCards();
       Array.from(cardsEl.querySelectorAll('button')).forEach(btn => btn.disabled = true);
+      Array.from(cardsEl.querySelectorAll('[data-action="toggle-auto"], [data-action="set-start"], [data-action="set-stop"], [data-action="set-idle"]')).forEach(el => el.disabled = true);
+      Array.from(cardsEl.querySelectorAll('[data-schedule-status]')).forEach(el => el.textContent = 'スケジュール: API が未設定です');
       Array.from(cardsEl.querySelectorAll('.status')).forEach(el => el.textContent = '状態: API が未設定です');
-      log('Terraform の main_svc_control_api_base_url を設定するとコントロール API が有効になります。');
+      setAuthMessage('サービスコントロール API が未設定です');
+      log('Terraform の sulu_control_api_base_url を設定するとコントロール API が有効になります。');
     } else {
-      renderCards();
-      bindEvents();
-      servicesWithStatus.forEach(s => updateStatus(s.key));
+      restoreTokens();
+      if (accessToken) {
+        setAuthMessage('ログイン済み');
+        renderLogoutButton();
+        renderCards();
+        bindEvents();
+        servicesWithStatus.forEach(s => updateStatus(s.key));
+        servicesWithStatus.forEach(s => fetchSchedule(s.key));
+        scheduleTokenRefresh();
+      } else {
+        setAuthMessage('ログインしてください');
+        renderLoginForm();
+      }
     }
   </script>
 </body>

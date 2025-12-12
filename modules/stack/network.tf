@@ -15,7 +15,7 @@ locals {
     zulip        = "zulip"
     exastro_web  = "ita-web"
     exastro_api  = "ita-api"
-    main_svc     = "main-svc"
+    sulu         = "sulu"
     pgadmin      = "pgadmin"
     phpmyadmin   = "phpmyadmin"
     keycloak     = "keycloak"
@@ -243,6 +243,42 @@ resource "aws_route_table_association" "private" {
   route_table_id = each.value.id
 }
 
+locals {
+  interface_vpc_endpoint_services = {
+    ssm         = "com.amazonaws.${var.region}.ssm"
+    ssmmessages = "com.amazonaws.${var.region}.ssmmessages"
+    ec2messages = "com.amazonaws.${var.region}.ec2messages"
+    logs        = "com.amazonaws.${var.region}.logs"
+    ecs         = "com.amazonaws.${var.region}.ecs"
+  }
+  interface_vpc_endpoint_sg_name = "${local.name_prefix}-vpce-sg"
+}
+
+resource "aws_security_group" "vpc_endpoints" {
+  count = length(local.interface_vpc_endpoint_services) > 0 ? 1 : 0
+
+  name        = local.interface_vpc_endpoint_sg_name
+  description = "Interface VPC endpoint access"
+  vpc_id      = local.vpc_id
+
+  ingress {
+    description = "Interface endpoint HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.tags, { Name = local.interface_vpc_endpoint_sg_name })
+}
+
 resource "aws_vpc_endpoint" "s3" {
   count = 1
 
@@ -252,6 +288,19 @@ resource "aws_vpc_endpoint" "s3" {
   route_table_ids   = values(local.private_route_table_ids)
 
   tags = merge(local.tags, { Name = local.s3_endpoint_name })
+}
+
+resource "aws_vpc_endpoint" "interface" {
+  for_each = local.interface_vpc_endpoint_services
+
+  vpc_id              = local.vpc_id
+  service_name        = each.value
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = values(local.private_subnet_ids)
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
+  private_dns_enabled = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-${each.key}-vpce" })
 }
 
 output "new_vpc_id" {
@@ -277,6 +326,11 @@ output "nat_gateway_id" {
 output "vpc_endpoint_ids" {
   description = "IDs of created VPC endpoints"
   value = {
-    s3 = try(aws_vpc_endpoint.s3[0].id, null)
+    s3          = try(aws_vpc_endpoint.s3[0].id, null)
+    ssm         = try(aws_vpc_endpoint.interface["ssm"].id, null)
+    ssmmessages = try(aws_vpc_endpoint.interface["ssmmessages"].id, null)
+    ec2messages = try(aws_vpc_endpoint.interface["ec2messages"].id, null)
+    logs        = try(aws_vpc_endpoint.interface["logs"].id, null)
+    ecs         = try(aws_vpc_endpoint.interface["ecs"].id, null)
   }
 }

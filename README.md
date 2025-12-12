@@ -1,9 +1,9 @@
 # aiops-custom-agent
 
-このリポジトリは、AIOpsの可能性を検証するために、プロトタイプ制作のためのものです。
+このリポジトリは、AIOpsの可能性を検証するために、プロトタイプ制作のための情報を収める。
 
 目指しているプロトタイプの特徴と機能イメージ 
-カスタマイズ性: 標準的なAIOpsツールでは対応できない、特定のシステム構成、独自の運用手順、または特殊なデータソースに対応するために設計。 
+カスタマイズ性: 誰でもすぐにはじめられるAIOpsを目指す。
 特定のタスク実行: 異常検知、イベントの相関付け、根本原因の特定、自動修復アクションの実行など、特定の運用タスクに特化して機能。 
 自律性のレベル: 推論、計画、記憶などの能力を備え、ある程度の自律性を持ってユーザーの代わりに目標達成やタスク完了を目指す。
 データ統合: プラットフォームメトリック、カスタムメトリック、ログ、イベントデータなど、複数のデータソースから情報を収集・分析。 
@@ -19,15 +19,15 @@
 
 ## 2. 方法
 
-- main-svc（メインサービスのダミー）を ITIL4 に準拠して運用する基盤を実運用に近い環境で整備します。OSS は原則無料・コミュニティ版を採用し、SSO での認証が可能なものとします。
-- AI の設置はエンジニアではなく、業務を熟知するサービス管理者が設定するものとします。
-- 精度・コストなどを含めたサービス品質を検証し人が判断した場合の比較を行います。この比較をもって、AI Ops をどのように活用できるかの実証とします。
+- sulu（メインサービスのダミー）を ITIL4 に準拠して運用する基盤を実運用に近い環境で整備します。基盤のOSS は原則無料・コミュニティ版を採用し、原則 SSO での認証が可能なものとします。
+- AI の設置はエンジニアではなく、サービス管理者が主に設定するものとします。
+- 実用性・精度・コストなどを含めたサービス品質を検証し人が判断した場合の比較を行います。この比較をもって、AI Ops をどのように活用できるかの実証とします。
 
 ## 3. リポジトリ構成
 
 - `main.tf` / `variables.tf` / `outputs.tf`: ルートのプロバイダ、変数、出力。`modules/stack` を呼び出す。
 - `modules/stack/`: ネットワーク、RDS、SSM、DNS+ACM+CloudFront 制御サイト、ECS、WAF など基盤をまとめたモジュール。`templates/control-index.html.tftpl` はコントロールサイトの HTML テンプレート。
-- `docker/`: サービス用 Docker ビルドコンテキスト（例: n8n、main-svc）。
+- `docker/`: サービス用 Docker ビルドコンテキスト（例: n8n、sulu）。`docker/sulu` は `shinsenter/sulu:php8.4` をベースにコントロールサイト SSO 設定とマイグレーション用フック（`hooks/onready/10-sulu-migrations.sh`）を追加した専用コンテキストです。
 - `scripts/`: イメージの pull/build/push、および ECS 再デプロイを行う補助スクリプト。
 - `images/`: ローカルに展開したイメージのキャッシュ置き場（git 管理外）。
 - `service-operations-platform.md`: サービス運用プラットフォームの補足資料。
@@ -37,22 +37,21 @@
 
 ### 運用対象 IT サービス
 
-- main-svc（ダミー本番サービス）を ECS 上で稼働させます。
+- sulu（ダミー本番サービス）を ECS 上で稼働。
 
 ### サービス運用基盤
 
-ITIL4 サービス運用ツール（選定中）
-[サービス運用プラットフォームへ記載](service-operations-platform.md)
+- ITIL4 サービス運用ツール（選定中）
+参考: [サービス運用プラットフォームへ記載](service-operations-platform.md)
 
-ITIL4 サービス運用ツール間連携（編集中）
-[サービス運用プラットフォームへ記載](general-messaging-spec.md)
+- ITIL4 サービス運用ツール間連携（編集中）
+参考: [サービス運用プラットフォームへ記載](general-messaging-spec.md)
 
 ## 5. 検証基盤の構築
 
 ### 前提条件（AWS アカウント/組織/SSO、ツール類、ネットワーク）
 
-
-- AWS Organizations 有効化済み、IAM Identity Center の権限セットを対象アカウントに付与済み。
+- AWS Organizations 有効化、IAM Identity Center の権限セットを対象アカウントに付与。
 - `aws configure sso` で `Admin-AIOps（仮）` プロファイルを作成し、実行前に `aws sso login --profile Admin-AIOps（仮）`。
 - ツール: Terraform >= 1.5.x、AWS CLI v2、Docker、jq、GNU tar。ネットワークは AWS SSO/STS/ECR に到達できること。
 - 状態管理はローカル `terraform.tfstate` 前提。機密情報があるため、取り扱いに注意。
@@ -80,7 +79,7 @@ ITIL4 サービス運用ツール間連携（編集中）
 6. 適用: `terraform apply -var-file=terraform.tfvars`
 7. ビルド/プッシュ `./scripts/pull_*` `./scripts/build_*`
 8. デプロイ `./scripts/redeploy_*` 
-9. SSOクライアント登録: manage_keycloak_clients = true　`terraform apply -var-file=terraform.tfvars`
+9. SSOクライアント登録: `scripts/create_keycloak_client_for_service.sh` を実行し、必要なサービス分の OIDC クライアントと SSM パラメータを作成
 10. 出力: `terraform output`（データベース接続情報 などを確認）
 11. 起動 https://control.smic-aiops.jp/
 12. 破棄が必要な場合: `terraform destroy -var-file=terraform.tfvars`

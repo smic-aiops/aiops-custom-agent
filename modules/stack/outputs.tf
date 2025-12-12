@@ -66,7 +66,7 @@ output "service_urls" {
     odoo         = var.create_ecs && var.create_odoo ? "https://${local.odoo_host}" : null
     keycloak     = var.create_ecs && var.create_keycloak ? "https://${local.keycloak_host}" : null
     gitlab       = var.create_ecs && var.create_gitlab ? "https://${local.gitlab_host}" : null
-    main_svc     = var.create_ecs && var.create_main_svc ? "https://${local.main_svc_host}" : null
+    sulu         = var.create_ecs && var.create_sulu ? "https://${local.sulu_host}" : null
     growi        = var.create_ecs && var.create_growi ? "https://${local.growi_host}" : null
     cmdbuild_r2u = var.create_ecs && var.create_cmdbuild_r2u ? "https://${local.cmdbuild_r2u_host}" : null
     orangehrm    = var.create_ecs && var.create_orangehrm ? "https://${local.orangehrm_host}" : null
@@ -82,36 +82,36 @@ output "enabled_services" {
   value       = local.enabled_services
 }
 
-output "zulip_dependencies" {
-  description = "Connection details and parameter names for Zulip dependencies"
-  value = {
-    redis_host                   = local.zulip_redis_host
-    redis_port                   = local.zulip_redis_port
-    memcached_endpoint           = local.zulip_memcached_endpoint
-    memcached_host               = local.zulip_memcached_host
-    memcached_port               = local.zulip_memcached_port_effective
-    mq_endpoint                  = local.zulip_mq_amqp_endpoint
-    mq_host                      = local.zulip_mq_host
-    mq_port                      = local.zulip_mq_port_effective
-    mq_username                  = var.zulip_mq_username
-    mq_password_parameter        = local.zulip_mq_password_parameter_name
-    db_username_parameter        = local.zulip_db_username_parameter_name
-    db_password_parameter        = local.zulip_db_password_parameter_name
-    db_name_parameter            = local.zulip_db_name_parameter_name
-    secret_key_parameter         = local.zulip_secret_key_parameter_name
-    oidc_client_id_parameter     = local.zulip_oidc_client_id_parameter_name
-    oidc_client_secret_parameter = local.zulip_oidc_client_secret_parameter_name
-    oidc_idps_parameter          = local.zulip_oidc_idps_parameter_name
-  }
-}
+# output "zulip_dependencies" {
+#   description = "Connection details and parameter names for Zulip dependencies"
+#   value = {
+#     redis_host                   = local.zulip_redis_host
+#     redis_port                   = local.zulip_redis_port
+#     memcached_endpoint           = local.zulip_memcached_endpoint
+#     memcached_host               = local.zulip_memcached_host
+#     memcached_port               = local.zulip_memcached_port_effective
+#     mq_endpoint                  = local.zulip_mq_amqp_endpoint
+#     mq_host                      = local.zulip_mq_host
+#     mq_port                      = local.zulip_mq_port_effective
+#     mq_username                  = var.zulip_mq_username
+#     mq_password_parameter        = local.zulip_mq_password_parameter_name
+#     db_username_parameter        = local.zulip_db_username_parameter_name
+#     db_password_parameter        = local.zulip_db_password_parameter_name
+#     db_name_parameter            = local.zulip_db_name_parameter_name
+#     secret_key_parameter         = local.zulip_secret_key_parameter_name
+#     oidc_client_id_parameter     = local.zulip_oidc_client_id_parameter_name
+#     oidc_client_secret_parameter = local.zulip_oidc_client_secret_parameter_name
+#     oidc_idps_parameter          = local.zulip_oidc_idps_parameter_name
+#   }
+# }
 
-output "main_svc_control_api_base_url" {
-  description = "Base URL for the main-svc control API (set via var.main_svc_control_api_base_url)"
-  value       = local.main_svc_control_api_base_url_effective
+output "sulu_control_api_base_url" {
+  description = "Base URL for the sulu control API (set via var.sulu_control_api_base_url)"
+  value       = local.sulu_control_api_base_url_effective
 }
 
 output "service_control_api_base_url" {
-  description = "Base URL for the service control API (n8n/zulip/main-svc/keycloak/odoo/pgadmin/phpmyadmin/gitlab)"
+  description = "Base URL for the service control API (n8n/zulip/sulu/keycloak/odoo/pgadmin/phpmyadmin/gitlab)"
   value       = local.service_control_api_base_url_effective
 }
 
@@ -123,6 +123,11 @@ output "n8n_filesystem_id" {
 output "zulip_filesystem_id" {
   description = "EFS ID used for Zulip (if created or supplied)"
   value       = local.zulip_filesystem_id_effective
+}
+
+output "sulu_filesystem_id" {
+  description = "EFS ID used for sulu (if created or supplied)"
+  value       = try(local.sulu_filesystem_id_effective, null)
 }
 
 output "exastro_filesystem_id" {
@@ -204,11 +209,11 @@ output "rds_postgresql" {
 output "rds_mysql" {
   description = "MySQL RDS connection details and password retrieval helper (if created)"
   value = {
-    host                 = var.create_mysql_rds ? try(aws_db_instance.mysql[0].address, null) : null
-    port                 = var.create_mysql_rds ? try(aws_db_instance.mysql[0].port, null) : null
-    database             = var.create_mysql_rds ? local.mysql_db_name_value : null
-    username             = var.create_mysql_rds ? local.mysql_db_username_value : null
-    password_parameter   = var.create_mysql_rds ? local.mysql_db_password_parameter_name : null
+    host               = var.create_mysql_rds ? try(aws_db_instance.mysql[0].address, null) : null
+    port               = var.create_mysql_rds ? try(aws_db_instance.mysql[0].port, null) : null
+    database           = var.create_mysql_rds ? local.mysql_db_name_value : null
+    username           = var.create_mysql_rds ? local.mysql_db_username_value : null
+    password_parameter = var.create_mysql_rds ? local.mysql_db_password_parameter_name : null
     password_get_command = var.create_mysql_rds ? trimspace(join(" ", compact([
       "aws ssm get-parameter",
       "--with-decryption",

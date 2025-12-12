@@ -12,6 +12,18 @@ variable "keycloak_base_url" {
   default     = null
 }
 
+variable "keycloak_realm" {
+  description = "Keycloak realm used for service logins when Keycloak is deployed via this repo"
+  type        = string
+  default     = "master"
+}
+
+variable "service_control_keycloak_client_id" {
+  description = "Keycloak client identifier used by the service control UI"
+  type        = string
+  default     = "service-control"
+}
+
 variable "existing_internet_gateway_id" {
   description = "If set, reuse this internet gateway instead of creating a new one"
   type        = string
@@ -78,18 +90,29 @@ variable "enable_service_control" {
   default     = true
 }
 
+variable "service_control_schedule_overrides" {
+  description = "Overrides for service control automation schedule (enabled/start/stop/idle)"
+  type = map(object({
+    enabled      = bool
+    start_time   = string
+    stop_time    = string
+    idle_minutes = number
+  }))
+  default = {}
+}
+
+variable "enable_efs_backup" {
+  description = "Enable EFS backup configuration when true"
+  type        = bool
+  default     = false
+}
+
 # Keycloak management
 
 variable "create_keycloak" {
   description = "Whether to create Keycloak service resources"
   type        = bool
   default     = true
-}
-
-variable "manage_keycloak_clients" {
-  description = "Create/update Keycloak OIDC clients and store their credentials in SSM via Terraform"
-  type        = bool
-  default     = false
 }
 
 variable "keycloak_admin_username" {
@@ -108,7 +131,7 @@ variable "keycloak_admin_password" {
 variable "enable_keycloak_autostop" {
   description = "Whether to enable Keycloak idle auto-stop (AppAutoScaling + CloudWatch alarm)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "keycloak_desired_count" {
@@ -155,6 +178,215 @@ variable "keycloak_smtp_password" {
   default     = null
 }
 
+# OIDC IdP YAML overrides (populated by scripts/create_keycloak_client_for_service.sh)
+
+variable "exastro_web_oidc_idps_yaml" {
+  description = "Optional override for Exastro Web Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: exastro-web
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "exastro_api_oidc_idps_yaml" {
+  description = "Optional override for Exastro API Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: exastro-api
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "sulu_oidc_idps_yaml" {
+  description = "Optional override for sulu Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: sulu
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "keycloak_oidc_idps_yaml" {
+  description = "Optional override for Keycloak service Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: keycloak
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "odoo_oidc_idps_yaml" {
+  description = "Optional override for Odoo Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: odoo
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "pgadmin_oidc_idps_yaml" {
+  description = "Optional override for pgAdmin Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: pgadmin
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "gitlab_oidc_idps_yaml" {
+  description = "Optional override for GitLab Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: gitlab
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "growi_oidc_idps_yaml" {
+  description = "Optional override for GROWI Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: growi
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "cmdbuild_r2u_oidc_idps_yaml" {
+  description = "Optional override for CMDBuild Ready2Use Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: cmdbuild-r2u
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "orangehrm_oidc_idps_yaml" {
+  description = "Optional override for OrangeHRM Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: orangehrm
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "zulip_oidc_idps_yaml" {
+  description = "Optional override for Zulip Keycloak IdP YAML when managing SSO credentials externally"
+  type        = string
+  sensitive   = true
+  default     = <<-YAML
+    keycloak:
+      oidc_url: https://keycloak.smic-aiops.jp/realms/master
+      display_name: Keycloak
+      client_id: zulip
+      secret: null
+      api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo
+      extra_params:
+        scope: openid email profile
+  YAML
+}
+
+variable "zulip_oidc_client_secret_parameter_name" {
+  description = "Existing SSM parameter name/ARN for Zulip OIDC client secret (skip Terraform-managed creation when set)"
+  type        = string
+  default     = null
+}
+
+variable "zulip_oidc_client_secret" {
+  description = "OIDC client secret for Zulip SSO (stored in SSM SecureString)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "zulip_oidc_full_name_validated" {
+  description = "Whether to set SOCIAL_AUTH_OIDC_FULL_NAME_VALIDATED for Zulip"
+  type        = bool
+  default     = false
+}
+
+variable "zulip_oidc_pkce_enabled" {
+  description = "Whether to set SOCIAL_AUTH_OIDC_PKCE_ENABLED for Zulip OIDC"
+  type        = bool
+  default     = true
+}
+
+variable "zulip_oidc_pkce_code_challenge_method" {
+  description = "Value for SOCIAL_AUTH_OIDC_PKCE_CODE_CHALLENGE_METHOD (e.g., S256)"
+  type        = string
+  default     = "S256"
+}
+
 # n8n service configuration
 
 variable "create_n8n" {
@@ -164,21 +396,15 @@ variable "create_n8n" {
 }
 
 variable "enable_n8n_autostop" {
-  description = "Whether to enable n8n idle auto-stop (AppAutoScaling + CloudWatch alarm)"
+  description = "Whether to enable n8n idle auto-stop (AppAutoScaling + CloudWatch alarm); disable it while service_control による自動起動・停止スケジュールが有効な時間帯は、スケジュールがライフサイクルを管理するため両者を競合させないよう false にします。"
   type        = bool
-  default     = true
-}
-
-variable "enable_n8n_keycloak" {
-  description = "Whether to inject Keycloak OIDC settings into n8n task definition"
-  type        = bool
-  default     = true
+  default     = false
 }
 
 variable "n8n_desired_count" {
   description = "Default desired count for n8n ECS service"
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "n8n_task_cpu" {
@@ -230,7 +456,7 @@ variable "create_zulip" {
 variable "enable_zulip_autostop" {
   description = "Whether to enable Zulip idle auto-stop (AppAutoScaling + CloudWatch alarm)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_zulip_keycloak" {
@@ -242,19 +468,25 @@ variable "enable_zulip_keycloak" {
 variable "zulip_desired_count" {
   description = "Default desired count for Zulip ECS service"
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "zulip_task_cpu" {
   description = "Override CPU units for Zulip task definition (null to use ecs_task_cpu)"
   type        = number
-  default     = 512
+  default     = 2048
 }
 
 variable "zulip_task_memory" {
   description = "Override memory (MB) for Zulip task definition (null to use ecs_task_memory)"
   type        = number
-  default     = 1024
+  default     = 4096
+}
+
+variable "zulip_mq_port" {
+  description = "Listener port for Amazon MQ (RabbitMQ) broker used by Zulip"
+  type        = number
+  default     = 5672
 }
 
 variable "ecr_repo_zulip" {
@@ -275,6 +507,8 @@ variable "zulip_environment" {
   default = {
     SSL_CERTIFICATE_GENERATION = "self-signed"
     DISABLE_HTTPS              = "True"
+    SETTING_RABBITMQ_USE_TLS   = "False"
+    RABBITMQ_USE_TLS           = "false"
   }
 }
 
@@ -298,58 +532,132 @@ variable "zulip_smtp_password" {
   default     = null
 }
 
-# Main service control
+# Sulu service control
 
-variable "create_main_svc" {
-  description = "Whether to create main-svc service resources"
+variable "create_sulu" {
+  description = "Whether to create sulu service resources"
   type        = bool
   default     = true
 }
 
-variable "enable_main_svc_autostop" {
-  description = "Whether to enable main-svc idle auto-stop (reserved for future use)"
+variable "create_sulu_efs" {
+  description = "Whether to create an EFS for sulu (tfvars-only flag)"
   type        = bool
   default     = true
 }
 
-variable "enable_main_svc_keycloak" {
-  description = "Whether to inject Keycloak OIDC settings into main-svc task definition"
+variable "enable_sulu_autostop" {
+  description = "Whether to enable sulu idle auto-stop (reserved for future use)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_sulu_keycloak" {
+  description = "Whether to inject Keycloak OIDC settings into sulu task definition"
   type        = bool
   default     = false
 }
 
-variable "main_svc_desired_count" {
-  description = "Default desired count for main-svc ECS service"
+variable "sulu_desired_count" {
+  description = "Default desired count for sulu ECS service"
   type        = number
   default     = 0
 }
 
-variable "main_svc_task_cpu" {
-  description = "Override CPU units for main-svc task definition (null to use ecs_task_cpu)"
+variable "sulu_health_check_grace_period_seconds" {
+  description = "Grace period for Sulu ECS service load balancer health checks (seconds)"
+  type        = number
+  default     = 300
+}
+
+variable "sulu_task_cpu" {
+  description = "Override CPU units for sulu task definition (null to use ecs_task_cpu)"
   type        = number
   default     = 512
 }
 
-variable "main_svc_task_memory" {
-  description = "Override memory (MB) for main-svc task definition (null to use ecs_task_memory)"
+variable "sulu_task_memory" {
+  description = "Override memory (MB) for sulu task definition (null to use ecs_task_memory)"
   type        = number
   default     = 1024
 }
 
-variable "ecr_repo_main_svc" {
-  description = "ECR repository name for main-svc"
+variable "ecr_repo_sulu" {
+  description = "ECR repository name for sulu"
   type        = string
-  default     = "main-svc"
+  default     = "sulu"
 }
 
-variable "main_svc_image_tag" {
-  description = "Main-svc base image tag (nginx alpine)"
+variable "sulu_image_tag" {
+  description = "Sulu base image tag (shinsenter/sulu)"
   type        = string
-  default     = "1.29.3"
+  default     = "php8.4"
 }
 
-variable "main_svc_control_api_base_url" {
-  description = "Base URL for the main-svc control API (if externally provided)"
+variable "sulu_db_name" {
+  description = "Logical PostgreSQL database name used by sulu"
+  type        = string
+  default     = "sulu"
+}
+
+variable "sulu_db_username" {
+  description = "Optional PostgreSQL username for sulu (falls back to the master user if null)"
+  type        = string
+  default     = null
+}
+
+variable "sulu_share_dir" {
+  description = "Filesystem location used as Sulu's share directory"
+  type        = string
+  default     = "/var/www/html/var/share"
+}
+
+variable "sulu_filesystem_id" {
+  description = "Existing EFS ID to mount for sulu uploads/share data"
+  type        = string
+  default     = null
+}
+
+variable "sulu_filesystem_path" {
+  description = "Container path to mount persistent storage for sulu uploads/share"
+  type        = string
+  default     = "/var/www/html/var/share"
+}
+
+variable "sulu_efs_availability_zone" {
+  description = "AZ for One Zone EFS (defaults to first private subnet AZ)"
+  type        = string
+  default     = null
+}
+
+variable "sulu_app_secret" {
+  description = "Override APP_SECRET for the sulu task"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "sulu_mailer_dsn" {
+  description = "Override MAILER_DSN for the sulu task (SES-based value is generated when unset)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "sulu_sso_default_role_key" {
+  description = "Default role key assigned to Keycloak-authenticated Sulu users"
+  type        = string
+  default     = "ROLE_USER"
+}
+
+variable "enable_sulu_control_api" {
+  description = "Whether to expose the per-service control API for Sulu"
+  type        = bool
+  default     = true
+}
+
+variable "sulu_control_api_base_url" {
+  description = "Base URL for the sulu control API (if externally provided)"
   type        = string
   default     = ""
 }
@@ -670,12 +978,6 @@ variable "enable_phpmyadmin_autostop" {
   default     = true
 }
 
-variable "enable_phpmyadmin_keycloak" {
-  description = "Whether to inject Keycloak OIDC settings into phpMyAdmin task definition"
-  type        = bool
-  default     = false
-}
-
 variable "phpmyadmin_desired_count" {
   description = "Default desired count for phpMyAdmin ECS service"
   type        = number
@@ -706,6 +1008,30 @@ variable "phpmyadmin_image_tag" {
   default     = "5.2.3"
 }
 
+variable "enable_phpmyadmin_alb_oidc" {
+  description = "Whether to protect phpMyAdmin via ALB OIDC authentication against Keycloak"
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.enable_phpmyadmin_alb_oidc == false ? true : (var.phpmyadmin_oidc_client_id != null && var.phpmyadmin_oidc_client_secret != null)
+    error_message = "When enable_phpmyadmin_alb_oidc is true, set both phpmyadmin_oidc_client_id and phpmyadmin_oidc_client_secret."
+  }
+}
+
+variable "phpmyadmin_oidc_client_id" {
+  description = "OIDC client ID for ALB-authenticated phpMyAdmin (Keycloak)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "phpmyadmin_oidc_client_secret" {
+  description = "OIDC client secret for ALB-authenticated phpMyAdmin (Keycloak)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 # GROWI service
 
 variable "create_growi" {
@@ -717,7 +1043,14 @@ variable "create_growi" {
 variable "create_growi_docdb" {
   description = "Whether to create a DocumentDB cluster for GROWI (tfvars-only flag)"
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "growi_db_password" {
+  description = "Database password for GROWI (DocumentDB)"
+  type        = string
+  sensitive   = true
+  default     = null
 }
 
 variable "create_growi_efs" {

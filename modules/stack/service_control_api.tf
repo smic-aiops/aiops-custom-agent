@@ -8,7 +8,7 @@ locals {
     zulip        = var.create_zulip
     exastro-web  = var.create_exastro_web_server
     exastro-api  = var.create_exastro_api_admin
-    main_svc     = var.create_main_svc
+    sulu         = var.create_sulu
     keycloak     = var.create_keycloak
     odoo         = var.create_odoo
     phpmyadmin   = var.create_phpmyadmin
@@ -25,7 +25,7 @@ locals {
       zulip        = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-zulip"
       exastro-web  = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-exastro-web"
       exastro-api  = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-exastro-api"
-      main_svc     = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-main-svc"
+      sulu         = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-sulu"
       keycloak     = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-keycloak"
       odoo         = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-odoo"
       phpmyadmin   = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${local.ecs_cluster_name}/${local.name_prefix}-phpmyadmin"
@@ -42,7 +42,7 @@ locals {
       zulip        = try(aws_lb_target_group.zulip[0].arn, "")
       exastro-web  = try(aws_lb_target_group.exastro_web[0].arn, "")
       exastro-api  = try(aws_lb_target_group.exastro_api_admin[0].arn, "")
-      main_svc     = try(aws_lb_target_group.main_svc[0].arn, "")
+      sulu         = try(aws_lb_target_group.sulu[0].arn, "")
       keycloak     = try(aws_lb_target_group.keycloak[0].arn, "")
       odoo         = try(aws_lb_target_group.odoo[0].arn, "")
       phpmyadmin   = try(aws_lb_target_group.phpmyadmin[0].arn, "")
@@ -54,12 +54,80 @@ locals {
     } : k => v if lookup(local.service_control_api_service_flags, k, false)
   }
   service_control_api_cluster_arn = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${local.ecs_cluster_name}"
+  service_control_schedule_prefix = local.service_control_ssm_path
+  service_control_autostop_alarm_sources = {
+    "exastro-web" = {
+      policy = aws_appautoscaling_policy.exastro_web_idle_scale_to_zero
+      rule   = "count-jp-exastro-web"
+    }
+    "exastro-api" = {
+      policy = aws_appautoscaling_policy.exastro_api_idle_scale_to_zero
+      rule   = "count-jp-exastro-api"
+    }
+    sulu = {
+      policy = aws_appautoscaling_policy.sulu_idle_scale_to_zero
+      rule   = "count-jp-sulu"
+    }
+    n8n = {
+      policy = aws_appautoscaling_policy.n8n_idle_scale_to_zero
+      rule   = "count-jp-n8n"
+    }
+    pgadmin = {
+      policy = aws_appautoscaling_policy.pgadmin_idle_scale_to_zero
+      rule   = "count-jp-pgadmin"
+    }
+    phpmyadmin = {
+      policy = aws_appautoscaling_policy.phpmyadmin_idle_scale_to_zero
+      rule   = "count-jp-phpmyadmin"
+    }
+    odoo = {
+      policy = aws_appautoscaling_policy.odoo_idle_scale_to_zero
+      rule   = "count-jp-odoo"
+    }
+    gitlab = {
+      policy = aws_appautoscaling_policy.gitlab_idle_scale_to_zero
+      rule   = "count-jp-gitlab"
+    }
+    zulip = {
+      policy = aws_appautoscaling_policy.zulip_idle_scale_to_zero
+      rule   = "count-jp-zulip"
+    }
+    keycloak = {
+      policy = aws_appautoscaling_policy.keycloak_idle_scale_to_zero
+      rule   = "count-jp-keycloak"
+    }
+    growi = {
+      policy = aws_appautoscaling_policy.growi_idle_scale_to_zero
+      rule   = "count-jp-growi"
+    }
+    "cmdbuild-r2u" = {
+      policy = aws_appautoscaling_policy.cmdbuild_r2u_idle_scale_to_zero
+      rule   = "count-jp-cmdbuild-r2u"
+    }
+    orangehrm = {
+      policy = aws_appautoscaling_policy.orangehrm_idle_scale_to_zero
+      rule   = "count-jp-orangehrm"
+    }
+  }
+  service_control_autostop_alarm_configs = {
+    for svc, cfg in local.service_control_autostop_alarm_sources : svc => {
+      alarm_name = "${local.name_prefix}-${svc}-idle"
+      rule_name  = cfg.rule
+      policy_arn = length(cfg.policy) > 0 ? cfg.policy[0].arn : ""
+    }
+  }
 }
 
 data "archive_file" "service_control_lambda" {
   type        = "zip"
   source_file = "${path.module}/templates/service_control_lambda.py"
   output_path = "${path.module}/templates/service_control_lambda.zip"
+}
+
+data "archive_file" "service_control_scheduler" {
+  type        = "zip"
+  source_file = "${path.module}/templates/service_control_scheduler.py"
+  output_path = "${path.module}/templates/service_control_scheduler.zip"
 }
 
 data "aws_iam_policy_document" "service_control_assume" {
@@ -141,6 +209,21 @@ data "aws_iam_policy_document" "service_control_inline" {
     ]
     resources = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:*"]
   }
+
+  statement {
+    actions = [
+      "ssm:GetParameter",
+      "ssm:PutParameter"
+    ]
+    resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.service_control_schedule_prefix}/*"]
+  }
+  statement {
+    actions = [
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DescribeAlarms"
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "service_control" {
@@ -161,6 +244,44 @@ resource "aws_iam_role_policy_attachment" "service_control_inline" {
   policy_arn = aws_iam_policy.service_control[0].arn
 }
 
+resource "aws_ssm_parameter" "service_control_service_arns" {
+  count     = local.service_control_enabled && var.create_ssm_parameters ? 1 : 0
+  name      = "${local.service_control_schedule_prefix}/service-arns"
+  type      = "String"
+  value     = jsonencode(local.service_control_api_services)
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-svc-control-service-arns" })
+}
+
+resource "aws_ssm_parameter" "service_control_target_group_arns" {
+  count     = local.service_control_enabled && var.create_ssm_parameters ? 1 : 0
+  name      = "${local.service_control_schedule_prefix}/target-group-arns"
+  type      = "String"
+  value     = jsonencode(local.service_control_target_groups)
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-svc-control-tg-arns" })
+}
+
+resource "aws_ssm_parameter" "service_control_autostop_alarms" {
+  count = local.service_control_enabled && var.create_ssm_parameters ? 1 : 0
+  name  = "${local.service_control_schedule_prefix}/autostop-alarms"
+  type  = "String"
+  value = jsonencode(
+    {
+      for svc, cfg in local.service_control_autostop_alarm_configs : svc => {
+        alarm_name = cfg.alarm_name
+        rule_name  = cfg.rule_name
+        policy_arn = cfg.policy_arn
+      } if cfg.policy_arn != ""
+    }
+  )
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-svc-control-autostop-alarms" })
+}
+
 resource "aws_lambda_function" "service_control" {
   count = local.service_control_enabled ? 1 : 0
 
@@ -174,15 +295,89 @@ resource "aws_lambda_function" "service_control" {
   source_code_hash = data.archive_file.service_control_lambda.output_base64sha256
 
   environment {
-    variables = {
-      CLUSTER_ARN       = local.service_control_api_cluster_arn
-      SERVICE_ARNS      = jsonencode(local.service_control_api_services)
-      TARGET_GROUP_ARNS = jsonencode(local.service_control_target_groups)
-      START_DESIRED     = "1"
-    }
+    variables = merge(
+      {
+        CLUSTER_ARN              = local.service_control_api_cluster_arn
+        START_DESIRED            = "1"
+        SERVICE_CONTROL_SSM_PATH = local.service_control_schedule_prefix
+        KEYCLOAK_BASE_URL        = local.keycloak_base_url_effective
+        KEYCLOAK_REALM           = local.control_site_keycloak_realm
+        KEYCLOAK_CLIENT_ID       = local.service_control_keycloak_client_id_effective
+      },
+      var.create_ssm_parameters ? {
+        SERVICE_ARNS_SSM_PARAMETER      = aws_ssm_parameter.service_control_service_arns[0].name
+        TARGET_GROUP_ARNS_SSM_PARAMETER = aws_ssm_parameter.service_control_target_group_arns[0].name
+        } : {
+        SERVICE_ARNS      = jsonencode(local.service_control_api_services)
+        TARGET_GROUP_ARNS = jsonencode(local.service_control_target_groups)
+      }
+    )
   }
 
   tags = merge(local.tags, { Name = local.service_control_lambda_name })
+}
+
+resource "aws_lambda_function" "service_control_scheduler" {
+  count = local.service_control_enabled ? 1 : 0
+
+  function_name = "${local.name_prefix}-svc-control-scheduler"
+  role          = aws_iam_role.service_control[0].arn
+  handler       = "service_control_scheduler.handler"
+  runtime       = "python3.12"
+  timeout       = 60
+
+  filename         = data.archive_file.service_control_scheduler.output_path
+  source_code_hash = data.archive_file.service_control_scheduler.output_base64sha256
+
+  environment {
+    variables = merge(
+      {
+        CLUSTER_ARN                                   = local.service_control_api_cluster_arn
+        SERVICE_CONTROL_SERVICE_KEYS                  = jsonencode(keys(local.service_control_api_services))
+        SERVICE_CONTROL_NAME_PREFIX                   = local.name_prefix
+        SERVICE_CONTROL_SCHEDULE_SERVICES             = jsonencode(local.service_control_services)
+        SERVICE_CONTROL_SSM_PATH                      = local.service_control_schedule_prefix
+        START_DESIRED                                 = "1"
+        SERVICE_CONTROL_AUTOSTOP_ALARM_PERIOD_SECONDS = tostring(local.service_control_alarm_period_seconds)
+        SERVICE_CONTROL_AUTOSTOP_ALARM_REGION         = var.region
+        SERVICE_CONTROL_AUTOSTOP_WAF_NAME             = try(aws_wafv2_web_acl.alb[0].name, "")
+      },
+      var.create_ssm_parameters ? {
+        SERVICE_ARNS_SSM_PARAMETER                    = aws_ssm_parameter.service_control_service_arns[0].name
+        SERVICE_CONTROL_AUTOSTOP_ALARMS_SSM_PARAMETER = aws_ssm_parameter.service_control_autostop_alarms[0].name
+        } : {
+        SERVICE_CONTROL_AUTOSTOP_POLICY_ARNS = jsonencode(
+          { for svc, cfg in local.service_control_autostop_alarm_configs : svc => cfg.policy_arn if cfg.policy_arn != "" }
+        )
+      }
+    )
+  }
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-svc-control-scheduler" })
+}
+
+resource "aws_cloudwatch_event_rule" "service_control_scheduler" {
+  count = local.service_control_enabled ? 1 : 0
+
+  name                = "${local.name_prefix}-svc-control-scheduler"
+  schedule_expression = "rate(5 minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "service_control_scheduler" {
+  count     = local.service_control_enabled ? 1 : 0
+  rule      = aws_cloudwatch_event_rule.service_control_scheduler[0].name
+  target_id = "service-control-scheduler"
+  arn       = aws_lambda_function.service_control_scheduler[0].arn
+  input     = "{}"
+}
+
+resource "aws_lambda_permission" "service_control_scheduler" {
+  count         = local.service_control_enabled ? 1 : 0
+  statement_id  = "AllowEventBridgeInvokeServiceControlScheduler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.service_control_scheduler[0].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.service_control_scheduler[0].arn
 }
 
 resource "aws_apigatewayv2_api" "service_control" {
@@ -212,9 +407,12 @@ resource "aws_apigatewayv2_integration" "service_control" {
 
 resource "aws_apigatewayv2_route" "service_control" {
   for_each = local.service_control_enabled ? {
-    "GET /status" = "GET /status",
-    "POST /start" = "POST /start",
-    "POST /stop"  = "POST /stop"
+    "GET /status"    = "GET /status",
+    "POST /start"    = "POST /start",
+    "POST /stop"     = "POST /stop",
+    "GET /schedule"  = "GET /schedule",
+    "POST /schedule" = "POST /schedule",
+    "POST /token"    = "POST /token",
   } : {}
 
   api_id    = aws_apigatewayv2_api.service_control[0].id

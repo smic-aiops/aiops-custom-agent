@@ -4,7 +4,7 @@ locals {
     var.create_n8n ? "n8n" : "",
     var.create_exastro_web_server ? "exastro-web" : "",
     var.create_exastro_api_admin ? "exastro-api" : "",
-    var.create_main_svc ? "main-svc" : "",
+    var.create_sulu ? "sulu" : "",
     var.create_keycloak ? "keycloak" : "",
     var.create_odoo ? "odoo" : "",
     var.create_pgadmin ? "pgadmin" : "",
@@ -18,7 +18,7 @@ locals {
   ecr_uri_n8n           = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_n8n}:latest"
   ecr_uri_exastro_web   = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_exastro_it_automation_web_server}:latest"
   ecr_uri_exastro_api   = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_exastro_it_automation_api_admin}:latest"
-  ecr_uri_main_svc      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_main_svc}:latest"
+  ecr_uri_sulu          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_sulu}:latest"
   ecr_uri_pgadmin       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_pgadmin}:latest"
   ecr_uri_phpmyadmin    = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_phpmyadmin}:latest"
   ecr_uri_keycloak      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_keycloak}:latest"
@@ -57,6 +57,10 @@ locals {
     var.n8n_filesystem_id != null && var.n8n_filesystem_id != "" ? var.n8n_filesystem_id :
     try(local.n8n_filesystem_id_effective, null)
   )
+  sulu_efs_id = (
+    var.sulu_filesystem_id != null && var.sulu_filesystem_id != "" ? var.sulu_filesystem_id :
+    try(local.sulu_filesystem_id_effective, null)
+  )
   zulip_efs_id = (
     var.zulip_filesystem_id != null && var.zulip_filesystem_id != "" ? var.zulip_filesystem_id :
     try(local.zulip_filesystem_id_effective, null)
@@ -90,28 +94,30 @@ locals {
     GENERIC_TIMEZONE        = "Asia/Tokyo"
   }
   default_environment_keycloak = {
-    KC_PROXY                       = "edge"
-    KC_PROXY_HEADERS               = "xforwarded"
-    KC_HTTP_ENABLED                = "true"
-    KC_HOSTNAME                    = "keycloak.${local.hosted_zone_name_input}"
-    KC_HOSTNAME_STRICT             = "false"
-    KC_HOSTNAME_STRICT_HTTPS       = "true"
-    KEYCLOAK_FRONTEND_URL          = "https://keycloak.${local.hosted_zone_name_input}/realms/master/"
-    KC_METRICS_ENABLED             = "false"
-    KC_HEALTH_ENABLED              = "true"
-    KC_DB                          = "postgres"
-    KC_SPI_EMAIL_HOST              = "email-smtp.${var.region}.amazonaws.com"
-    KC_SPI_EMAIL_PORT              = "587"
-    KC_SPI_EMAIL_FROM              = "no-reply@${local.hosted_zone_name_input}"
-    KC_SPI_EMAIL_FROM_DISPLAY_NAME = "Keycloak"
-    KC_SPI_EMAIL_AUTH              = "true"
-    KC_SPI_EMAIL_STARTTLS          = "true"
-    KEYCLOAK_IMPORT                = "${var.keycloak_filesystem_path}/import/realm-ja.json"
-    KEYCLOAK_IMPORT_STRATEGY       = "IGNORE_EXISTING"
-    TZ                             = "Asia/Tokyo"
-    LANG                           = "ja_JP.UTF-8"
-    LANGUAGE                       = "ja_JP:ja"
-    LC_ALL                         = "ja_JP.UTF-8"
+    KC_PROXY                            = "edge"
+    KC_PROXY_HEADERS                    = "xforwarded"
+    KC_HTTP_ENABLED                     = "true"
+    KC_HTTP_MANAGEMENT_ENABLED          = "true"
+    KC_HTTP_MANAGEMENT_PORT             = "9000"
+    KC_HOSTNAME                         = "keycloak.${local.hosted_zone_name_input}"
+    KC_HOSTNAME_STRICT                  = "false"
+    KC_HOSTNAME_STRICT_HTTPS            = "true"
+    KEYCLOAK_FRONTEND_URL               = "https://keycloak.${local.hosted_zone_name_input}/realms/master/"
+    KC_METRICS_ENABLED                  = "false"
+    KC_HEALTH_ENABLED                   = "true"
+    KC_DB                               = "postgres"
+    KC_SPI_EMAIL_SMTP_HOST              = "email-smtp.${var.region}.amazonaws.com"
+    KC_SPI_EMAIL_SMTP_PORT              = "587"
+    KC_SPI_EMAIL_SMTP_FROM              = "no-reply@${local.hosted_zone_name_input}"
+    KC_SPI_EMAIL_SMTP_FROM_DISPLAY_NAME = "Keycloak"
+    KC_SPI_EMAIL_SMTP_AUTH              = "true"
+    KC_SPI_EMAIL_SMTP_STARTTLS          = "true"
+    KEYCLOAK_IMPORT                     = "${var.keycloak_filesystem_path}/import/realm-ja.json"
+    KEYCLOAK_IMPORT_STRATEGY            = "IGNORE_EXISTING"
+    TZ                                  = "Asia/Tokyo"
+    LANG                                = "ja_JP.UTF-8"
+    LANGUAGE                            = "ja_JP:ja"
+    LC_ALL                              = "ja_JP.UTF-8"
   }
   default_environment_odoo = {
     DB_SSLMODE             = "require"
@@ -255,15 +261,55 @@ locals {
     TZ                         = "Asia/Tokyo"
   }
   default_environment_zulip = {
-    SETTINGS_FLAVOR                = "production"
-    SETTING_EXTERNAL_HOST          = local.zulip_host
-    SETTING_ZULIP_ADMINISTRATOR    = "admin@${local.hosted_zone_name_input}"
-    ZULIP_EXTERNAL_HOST            = local.zulip_host
-    ZULIP_ADMINISTRATOR            = "admin@${local.hosted_zone_name_input}"
-    DISABLE_HTTPS                  = "true"
-    SSL_CERTIFICATE_GENERATION     = "false"
-    ZULIP_SETTING_TIME_ZONE        = "Asia/Tokyo"
-    ZULIP_SETTING_DEFAULT_LANGUAGE = "ja"
+    SETTINGS_FLAVOR                      = "production"
+    SETTING_EXTERNAL_HOST                = local.zulip_host
+    SETTING_EMAIL_HOST                   = "email-smtp.${var.region}.amazonaws.com"
+    SETTING_EMAIL_PORT                   = "587"
+    SETTING_EMAIL_USE_TLS                = "True"
+    SETTING_EMAIL_USE_SSL                = "False"
+    SETTING_NOREPLY_EMAIL_ADDRESS        = "noreply@${local.hosted_zone_name_input}"
+    SETTING_ZULIP_ADMINISTRATOR          = "admin@${local.hosted_zone_name_input}"
+    ZULIP_EXTERNAL_HOST                  = local.zulip_host
+    EXTERNAL_HOST                        = local.zulip_host
+    ZULIP_ADMINISTRATOR                  = "admin@${local.hosted_zone_name_input}"
+    DISABLE_HTTPS                        = "true"
+    SSL_CERTIFICATE_GENERATION           = "false"
+    ZULIP_SETTING_TIME_ZONE              = "Asia/Tokyo"
+    ZULIP_SETTING_DEFAULT_LANGUAGE       = "ja"
+    RABBITMQ_HOST                        = "127.0.0.1"
+    SETTING_RABBITMQ_HOST                = "127.0.0.1"
+    RABBITMQ_PORT                        = "5672"
+    SETTING_RABBITMQ_PORT                = "5672"
+    REDIS_HOST                           = "127.0.0.1"
+    SETTING_REDIS_HOST                   = "127.0.0.1"
+    REDIS_PORT                           = "6379"
+    SETTING_REDIS_PORT                   = "6379"
+    SECRETS_redis_password               = ""
+    SECRETS_rate_limiting_redis_password = ""
+    MEMCACHED_HOST                       = "127.0.0.1:11211"
+    SETTING_MEMCACHED_LOCATION           = "127.0.0.1:11211"
+    OPEN_REALM_CREATION                  = "True"
+  }
+  zulip_keycloak_environment = var.enable_zulip_keycloak ? {
+    ZULIP_AUTH_BACKENDS                                 = "EmailAuthBackend,GenericOpenIdConnectBackend"
+    SETTING_SOCIAL_AUTH_OIDC_FULL_NAME_VALIDATED        = var.zulip_oidc_full_name_validated ? "True" : "False"
+    SETTING_SOCIAL_AUTH_OIDC_PKCE_ENABLED               = var.zulip_oidc_pkce_enabled ? "True" : "False"
+    SETTING_SOCIAL_AUTH_OIDC_PKCE_CODE_CHALLENGE_METHOD = var.zulip_oidc_pkce_code_challenge_method
+  } : {}
+  default_environment_sulu = {
+    APP_ENV                   = "prod"
+    DEFAULT_URI               = "https://${local.sulu_host}"
+    APP_SHARE_DIR             = var.sulu_share_dir
+    SEAL_DSN                  = "loupe://%kernel.project_dir%/var/indexes"
+    LOCK_DSN                  = "semaphore"
+    TZ                        = "Asia/Tokyo"
+    SULU_ADMIN_EMAIL          = "admin@${local.hosted_zone_name_input}"
+    SULU_HOST                 = local.sulu_host
+    SULU_KEYCLOAK_HOST        = local.keycloak_host
+    SULU_KEYCLOAK_REALM       = local.keycloak_realm
+    SULU_SSO_DEFAULT_ROLE_KEY = var.sulu_sso_default_role_key
+    SULU_SSO_CLIENT_ID        = ""
+    SULU_SSO_CLIENT_SECRET    = ""
   }
   keycloak_env_common = {
     KEYCLOAK_ISSUER_URL   = local.keycloak_issuer_url
@@ -271,7 +317,6 @@ locals {
     KEYCLOAK_TOKEN_URL    = local.keycloak_token_url
     KEYCLOAK_USERINFO_URL = local.keycloak_userinfo_url
   }
-  n8n_keycloak_environment          = var.enable_n8n_keycloak ? local.keycloak_env_common : {}
   exastro_web_keycloak_environment  = var.enable_exastro_web_keycloak ? local.keycloak_env_common : {}
   exastro_api_keycloak_environment  = var.enable_exastro_api_keycloak ? local.keycloak_env_common : {}
   cmdbuild_r2u_keycloak_environment = var.enable_cmdbuild_r2u_keycloak ? local.keycloak_env_common : {}
@@ -339,38 +384,33 @@ locals {
     ORANGEHRM_DATABASE_PASSWORD = local.mysql_db_password_parameter_name
   }
   default_ssm_params_zulip_base = {
-    DB_HOST                    = local.db_host_parameter_name
-    DB_PORT                    = local.db_port_parameter_name
-    DB_HOST_PORT               = local.db_port_parameter_name
-    DB_NAME                    = local.zulip_db_name_parameter_name
-    DB_USER                    = local.zulip_db_username_parameter_name
-    DB_PASSWORD                = local.zulip_db_password_parameter_name
-    SECRETS_postgres_password  = local.zulip_db_password_parameter_name
-    RABBITMQ_USERNAME          = local.zulip_mq_username_parameter_name
-    SETTING_RABBITMQ_USER      = local.zulip_mq_username_parameter_name
-    RABBITMQ_PASSWORD          = local.zulip_mq_password_parameter_name
-    SECRETS_rabbitmq_password  = local.zulip_mq_password_parameter_name
-    RABBITMQ_HOST              = local.zulip_mq_host_parameter_name
-    SETTING_RABBITMQ_HOST      = local.zulip_mq_host_parameter_name
-    RABBITMQ_PORT              = local.zulip_mq_port_parameter_name
-    SETTING_RABBITMQ_PORT      = local.zulip_mq_port_parameter_name
-    REDIS_HOST                 = local.zulip_redis_host_parameter_name
-    SETTING_REDIS_HOST         = local.zulip_redis_host_parameter_name
-    REDIS_PORT                 = local.zulip_redis_port_parameter_name
-    SETTING_REDIS_PORT         = local.zulip_redis_port_parameter_name
-    MEMCACHED_HOST             = local.zulip_memcached_endpoint_parameter_name
-    SETTING_MEMCACHED_LOCATION = local.zulip_memcached_endpoint_parameter_name
-    SECRET_KEY                 = local.zulip_secret_key_parameter_name
-    SECRETS_secret_key         = local.zulip_secret_key_parameter_name
+    DB_HOST                   = local.db_host_parameter_name
+    DB_PORT                   = local.db_port_parameter_name
+    DB_HOST_PORT              = local.db_port_parameter_name
+    DB_NAME                   = local.zulip_db_name_parameter_name
+    DB_USER                   = local.zulip_db_username_parameter_name
+    DB_PASSWORD               = local.zulip_db_password_parameter_name
+    SECRETS_postgres_password = local.zulip_db_password_parameter_name
+    RABBITMQ_USERNAME         = local.zulip_mq_username_parameter_name
+    SETTING_RABBITMQ_USER     = local.zulip_mq_username_parameter_name
+    RABBITMQ_PASSWORD         = local.zulip_mq_password_parameter_name
+    SECRETS_rabbitmq_password = local.zulip_mq_password_parameter_name
+    SECRET_KEY                = local.zulip_secret_key_parameter_name
+    SECRETS_secret_key        = local.zulip_secret_key_parameter_name
   }
   default_ssm_params_zulip_oidc = var.enable_zulip_keycloak ? {
-    OIDC_CLIENT_ID     = local.zulip_oidc_client_id_parameter_name
-    OIDC_CLIENT_SECRET = local.zulip_oidc_client_secret_parameter_name
-    OIDC_IDPS          = local.zulip_oidc_idps_parameter_name
+    OIDC_CLIENT_ID                        = local.zulip_oidc_client_id_parameter_name
+    OIDC_CLIENT_SECRET                    = local.zulip_oidc_client_secret_parameter_name
+    SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS = local.zulip_oidc_idps_parameter_name
+    SECRETS_social_auth_oidc_secret       = local.zulip_oidc_client_secret_parameter_name
   } : {}
   optional_smtp_params_keycloak = merge(
-    local.keycloak_smtp_username_value != null ? { KC_SPI_EMAIL_USER = local.keycloak_smtp_username_parameter_name } : {},
-    local.keycloak_smtp_password_value != null ? { KC_SPI_EMAIL_PASSWORD = local.keycloak_smtp_password_parameter_name } : {}
+    local.keycloak_smtp_username_value != null ? { KC_SPI_EMAIL_SMTP_USER = local.keycloak_smtp_username_parameter_name } : {},
+    local.keycloak_smtp_password_value != null ? { KC_SPI_EMAIL_SMTP_PASSWORD = local.keycloak_smtp_password_parameter_name } : {}
+  )
+  optional_smtp_params_zulip = merge(
+    local.zulip_smtp_username_value != null ? { SETTING_EMAIL_HOST_USER = local.zulip_smtp_username_parameter_name } : {},
+    local.zulip_smtp_password_value != null ? { SECRETS_email_password = local.zulip_smtp_password_parameter_name } : {}
   )
   optional_smtp_params_odoo = merge(
     local.odoo_smtp_username_value != null ? { SMTP_USER = local.odoo_smtp_username_parameter_name } : {},
@@ -431,11 +471,17 @@ locals {
   ssm_param_arns_growi        = { for k, v in merge(local.default_ssm_params_growi, var.growi_ssm_params, local.optional_smtp_params_growi) : k => (can(regex("^arn:aws:ssm", v)) ? v : "arn:aws:ssm:${var.region}:${local.account_id}:parameter${startswith(v, "/") ? v : "/${v}"}") }
   ssm_param_arns_cmdbuild_r2u = { for k, v in merge(local.default_ssm_params_cmdbuild_r2u, var.cmdbuild_r2u_ssm_params, local.optional_smtp_params_cmdbuild_r2u) : k => (can(regex("^arn:aws:ssm", v)) ? v : "arn:aws:ssm:${var.region}:${local.account_id}:parameter${startswith(v, "/") ? v : "/${v}"}") }
   ssm_param_arns_orangehrm    = { for k, v in merge(local.default_ssm_params_orangehrm, var.orangehrm_ssm_params, local.optional_smtp_params_orangehrm) : k => (can(regex("^arn:aws:ssm", v)) ? v : "arn:aws:ssm:${var.region}:${local.account_id}:parameter${startswith(v, "/") ? v : "/${v}"}") }
-  ssm_param_arns_zulip        = { for k, v in merge(local.default_ssm_params_zulip_base, local.default_ssm_params_zulip_oidc, var.zulip_db_ssm_params, var.zulip_ssm_params) : k => (can(regex("^arn:aws:ssm", v)) ? v : "arn:aws:ssm:${var.region}:${local.account_id}:parameter${startswith(v, "/") ? v : "/${v}"}") }
-  ssm_param_arns_n8n_oidc = var.enable_n8n_keycloak ? { for k, v in {
-    KEYCLOAK_CLIENT_ID     = local.n8n_oidc_client_id_parameter_name
-    KEYCLOAK_CLIENT_SECRET = local.n8n_oidc_client_secret_parameter_name
-  } : k => "arn:aws:ssm:${var.region}:${local.account_id}:parameter${startswith(v, "/") ? v : "/${v}"}" } : {}
+  ssm_param_arns_zulip        = { for k, v in merge(local.default_ssm_params_zulip_base, local.default_ssm_params_zulip_oidc, var.zulip_db_ssm_params, var.zulip_ssm_params, local.optional_smtp_params_zulip) : k => (can(regex("^arn:aws:ssm", v)) ? v : "arn:aws:ssm:${var.region}:${local.account_id}:parameter${startswith(v, "/") ? v : "/${v}"}") }
+  sulu_ssm_core_params = {
+    APP_SECRET   = local.sulu_app_secret_parameter_name
+    DATABASE_URL = local.sulu_database_url_parameter_name
+    MAILER_DSN   = local.sulu_mailer_dsn_parameter_name
+  }
+  sulu_ssm_oidc_params = var.enable_sulu_keycloak ? {
+    SULU_SSO_CLIENT_ID     = local.sulu_oidc_client_id_parameter_name
+    SULU_SSO_CLIENT_SECRET = local.sulu_oidc_client_secret_parameter_name
+  } : {}
+  ssm_param_arns_sulu = { for k, v in merge(local.sulu_ssm_core_params, local.sulu_ssm_oidc_params) : k => (can(regex("^arn:aws:ssm", v)) ? v : "arn:aws:ssm:${var.region}:${local.account_id}:parameter${startswith(v, "/") ? v : "/${v}"}") }
   ssm_param_arns_exastro_web_oidc = var.enable_exastro_web_keycloak ? { for k, v in {
     KEYCLOAK_CLIENT_ID     = local.exastro_web_oidc_client_id_parameter_name
     KEYCLOAK_CLIENT_SECRET = local.exastro_web_oidc_client_secret_parameter_name
@@ -657,11 +703,10 @@ resource "aws_ecs_task_definition" "n8n" {
           hostPort      = 5678
           protocol      = "tcp"
         }]
-        environment = [for k, v in merge(local.default_environment_n8n, var.n8n_environment, local.n8n_keycloak_environment) : { name = k, value = v }]
+        environment = [for k, v in merge(local.default_environment_n8n, var.n8n_environment) : { name = k, value = v }]
         secrets = concat(
           var.n8n_secrets,
-          [for k, v in local.ssm_param_arns_n8n : { name = k, valueFrom = v }],
-          var.enable_n8n_keycloak ? [for k, v in local.ssm_param_arns_n8n_oidc : { name = k, valueFrom = v }] : []
+          [for k, v in local.ssm_param_arns_n8n : { name = k, valueFrom = v }]
         )
         entryPoint = [var.n8n_shell_path, "-c"]
         command = [
@@ -941,42 +986,102 @@ resource "aws_ecs_task_definition" "exastro_api_admin" {
   tags = merge(local.tags, { Name = "${local.name_prefix}-exastro-api-td" })
 }
 
-resource "aws_ecs_task_definition" "main_svc" {
-  count = var.create_ecs && var.create_main_svc ? 1 : 0
+resource "aws_ecs_task_definition" "sulu" {
+  count = var.create_ecs && var.create_sulu ? 1 : 0
 
-  family                   = "${local.name_prefix}-main-svc"
-  cpu                      = coalesce(var.main_svc_task_cpu, var.ecs_task_cpu)
-  memory                   = coalesce(var.main_svc_task_memory, var.ecs_task_memory)
+  family                   = "${local.name_prefix}-sulu"
+  cpu                      = coalesce(var.sulu_task_cpu, var.ecs_task_cpu)
+  memory                   = coalesce(var.sulu_task_memory, var.ecs_task_memory)
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution[0].arn
   task_role_arn            = aws_iam_role.ecs_task[0].arn
 
-  container_definitions = jsonencode([
-    merge(local.ecs_base_container, {
-      name  = "main-svc"
-      image = local.ecr_uri_main_svc
-      portMappings = [{
-        containerPort = 80
-        hostPort      = 80
-        protocol      = "tcp"
-      }]
-      environment = [for k, v in var.main_svc_environment : { name = k, value = v }]
-      secrets     = var.main_svc_secrets
-      logConfiguration = merge(local.ecs_base_container.logConfiguration, {
-        options = merge(local.ecs_base_container.logConfiguration.options, {
-          "awslogs-group" = aws_cloudwatch_log_group.ecs["main-svc"].name
+  dynamic "volume" {
+    for_each = local.sulu_efs_id != null ? [1] : []
+    content {
+      name = "sulu-share"
+      efs_volume_configuration {
+        file_system_id     = local.sulu_efs_id
+        root_directory     = "/"
+        transit_encryption = "ENABLED"
+        authorization_config {
+          access_point_id = null
+          iam             = "DISABLED"
+        }
+      }
+    }
+  }
+
+  container_definitions = jsonencode(concat(
+    local.sulu_efs_id != null ? [
+      merge(local.ecs_base_container, {
+        name       = "sulu-fs-init"
+        image      = "public.ecr.aws/docker/library/alpine:3.19"
+        essential  = false
+        entryPoint = ["/bin/sh", "-c"]
+        command = [
+          <<-EOT
+            set -eu
+            mkdir -p "${var.sulu_filesystem_path}"
+            chown -R 33:33 "${var.sulu_filesystem_path}"
+          EOT
+        ]
+        mountPoints = [{
+          sourceVolume  = "sulu-share"
+          containerPath = var.sulu_filesystem_path
+          readOnly      = false
+        }]
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group" = aws_cloudwatch_log_group.ecs["sulu"].name
+          })
         })
       })
-    })
-  ])
+    ] : [],
+    [
+      merge(local.ecs_base_container, {
+        name  = "sulu"
+        image = local.ecr_uri_sulu
+        user  = "0:0"
+        portMappings = [{
+          containerPort = 80
+          hostPort      = 80
+          protocol      = "tcp"
+        }]
+        environment = [for k, v in merge(local.default_environment_sulu, coalesce(var.sulu_environment, {})) : { name = k, value = v }]
+        secrets = concat(
+          var.sulu_secrets,
+          [for k, v in local.ssm_param_arns_sulu : { name = k, valueFrom = v }]
+        )
+        mountPoints = local.sulu_efs_id != null ? [
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = var.sulu_filesystem_path
+            readOnly      = false
+          }
+        ] : []
+        dependsOn = local.sulu_efs_id != null ? [
+          {
+            containerName = "sulu-fs-init"
+            condition     = "COMPLETE"
+          }
+        ] : []
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group" = aws_cloudwatch_log_group.ecs["sulu"].name
+          })
+        })
+      })
+    ]
+  ))
 
   runtime_platform {
     operating_system_family = "LINUX"
     cpu_architecture        = var.image_architecture_cpu
   }
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-main-svc-td" })
+  tags = merge(local.tags, { Name = "${local.name_prefix}-sulu-td" })
 }
 
 resource "aws_ecs_task_definition" "keycloak" {
@@ -1099,7 +1204,18 @@ resource "aws_ecs_task_definition" "keycloak" {
   "enabled": true,
   "internationalizationEnabled": true,
   "defaultLocale": "ja",
-  "supportedLocales": ["ja", "en"]
+  "supportedLocales": ["ja", "en"],
+  "smtpServer": {
+    "auth": "true",
+    "from": "no-reply@${local.hosted_zone_name_input}",
+    "fromDisplayName": "Keycloak",
+    "host": "email-smtp.${var.region}.amazonaws.com",
+    "port": "587",
+    "replyTo": "no-reply@${local.hosted_zone_name_input}",
+    "replyToDisplayName": "Keycloak",
+    "starttls": "true",
+    "ssl": "false"
+  }
 }
 JSON
             chown -R 1000:0 "$${import_dir}"

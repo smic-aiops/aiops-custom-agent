@@ -1,16 +1,48 @@
 import json
 import os
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
 
 import boto3
 
 ecs = boto3.client("ecs")
 elbv2 = boto3.client("elbv2")
 ecr = boto3.client("ecr")
+ssm = boto3.client("ssm")
 
 CLUSTER_ARN = os.environ["CLUSTER_ARN"]
-SERVICE_ARNS = json.loads(os.environ["SERVICE_ARNS"])
-TARGET_GROUP_ARNS = json.loads(os.environ.get("TARGET_GROUP_ARNS", "{}"))
 START_DESIRED = int(os.environ.get("START_DESIRED", "1"))
+SERVICE_CONTROL_SSM_PATH = os.environ.get("SERVICE_CONTROL_SSM_PATH", "")
+KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL", "").rstrip("/")
+KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "").strip("/")
+KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "")
+KEYCLOAK_TOKEN_ENDPOINT = f"{KEYCLOAK_BASE_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+
+
+def _load_json_config(env_key, ssm_param_env_key, default=None):
+    default = default or {}
+    raw = os.environ.get(env_key)
+    if raw:
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            print({"warning": f"{env_key} is not valid JSON"})
+    param_name = os.environ.get(ssm_param_env_key)
+    if param_name:
+        try:
+            resp = ssm.get_parameter(Name=param_name)
+            return json.loads(resp["Parameter"]["Value"])
+        except ssm.exceptions.ParameterNotFound:
+            print({"warning": "ssm parameter not found", "parameter": param_name})
+        except Exception as exc:  # pylint: disable=broad-except
+            print({"warning": "failed to load ssm parameter", "parameter": param_name, "error": str(exc)})
+    return default.copy() if isinstance(default, dict) else default
+
+
+SERVICE_ARNS = _load_json_config("SERVICE_ARNS", "SERVICE_ARNS_SSM_PARAMETER", {})
+TARGET_GROUP_ARNS = _load_json_config("TARGET_GROUP_ARNS", "TARGET_GROUP_ARNS_SSM_PARAMETER", {})
 
 
 def _response(status, body):
@@ -123,6 +155,75 @@ def _update(service_arn, desired):
     ecs.update_service(cluster=CLUSTER_ARN, service=service_arn, desiredCount=desired)
     return _describe(service_arn)
 
+def _schedule_parameter_name(service_key):
+    return f"{SERVICE_CONTROL_SSM_PATH.rstrip('/')}/{service_key}/schedule"
+
+DEFAULT_SCHEDULE = {
+    "enabled": False,
+    "start_time": "09:00",
+    "stop_time": "22:00",
+    "idle_minutes": 60,
+}
+TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
+
+def _validate_time(value):
+    if not isinstance(value, str) or not TIME_PATTERN.match(value):
+        raise ValueError("time must be in HH:MM format")
+
+def _get_schedule(service_key):
+    if not SERVICE_CONTROL_SSM_PATH:
+        return dict(DEFAULT_SCHEDULE)
+    try:
+        resp = ssm.get_parameter(Name=_schedule_parameter_name(service_key))
+        payload = json.loads(resp["Parameter"]["Value"])
+        return {**DEFAULT_SCHEDULE, **payload}
+    except ssm.exceptions.ParameterNotFound:
+        return dict(DEFAULT_SCHEDULE)
+
+def _put_schedule(service_key, schedule):
+    if not SERVICE_CONTROL_SSM_PATH:
+        return
+    ssm.put_parameter(
+        Name=_schedule_parameter_name(service_key),
+        Value=json.dumps(schedule),
+        Type="String",
+        Overwrite=True,
+    )
+
+def _update_schedule(service_key, payload):
+    schedule = _get_schedule(service_key)
+    if "enabled" in payload:
+        schedule["enabled"] = bool(payload["enabled"])
+    if "start_time" in payload and payload["start_time"] is not None:
+        _validate_time(payload["start_time"])
+        schedule["start_time"] = payload["start_time"]
+    if "stop_time" in payload and payload["stop_time"] is not None:
+        _validate_time(payload["stop_time"])
+        schedule["stop_time"] = payload["stop_time"]
+    if "idle_minutes" in payload and payload["idle_minutes"] is not None:
+        schedule["idle_minutes"] = int(payload["idle_minutes"])
+    _put_schedule(service_key, schedule)
+    return schedule
+
+
+def _proxy_keycloak_token(payload):
+    if not KEYCLOAK_BASE_URL or not KEYCLOAK_REALM or not KEYCLOAK_CLIENT_ID:
+        raise RuntimeError("Keycloak token proxy is not configured.")
+    encoded = urllib.parse.urlencode({k: str(v) for k, v in payload.items()}).encode("utf-8")
+    req = urllib.request.Request(
+        KEYCLOAK_TOKEN_ENDPOINT,
+        data=encoded,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8")
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Keycloak token request failed: {exc}") from exc
+
 
 def handler(event, context):
     route = event.get("requestContext", {}).get("http", {}).get("path", "")
@@ -135,6 +236,19 @@ def handler(event, context):
 
     try:
         print({"route": route, "method": method, "service_key": service_key})
+        if route.endswith("/token") and method == "POST":
+            payload = json.loads(event.get("body") or "{}")
+            payload = {k: v for k, v in payload.items() if v is not None}
+            payload["client_id"] = KEYCLOAK_CLIENT_ID
+            try:
+                status, raw_body = _proxy_keycloak_token(payload)
+            except RuntimeError as exc:
+                return _response(502, {"message": str(exc)})
+            try:
+                parsed = json.loads(raw_body)
+            except json.JSONDecodeError:
+                parsed = {"message": raw_body}
+            return _response(status, parsed)
         service_arn = _get_service_arn(service_key)
         if route.endswith("/status") and method == "GET":
             body = _describe(service_arn)
@@ -148,6 +262,12 @@ def handler(event, context):
         if route.endswith("/stop") and method == "POST":
             body = _update(service_arn, 0)
             return _response(200, body)
+        if route.endswith("/schedule"):
+            if method == "GET":
+                return _response(200, _get_schedule(service_key))
+            if method == "POST":
+                payload = json.loads(event.get("body") or "{}")
+                return _response(200, _update_schedule(service_key, payload))
         return _response(404, {"message": "Not found"})
     except ValueError as exc:
         return _response(400, {"message": str(exc)})

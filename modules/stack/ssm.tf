@@ -10,8 +10,6 @@ locals {
   n8n_db_username_parameter_name                 = "/${local.name_prefix}/n8n/db/username"
   n8n_db_password_parameter_name                 = "/${local.name_prefix}/n8n/db/password"
   n8n_db_name_parameter_name                     = "/${local.name_prefix}/n8n/db/name"
-  n8n_oidc_client_id_parameter_name              = "/${local.name_prefix}/n8n/oidc/client_id"
-  n8n_oidc_client_secret_parameter_name          = "/${local.name_prefix}/n8n/oidc/client_secret"
   zulip_db_username_parameter_name               = "/${local.name_prefix}/zulip/db/username"
   zulip_db_password_parameter_name               = "/${local.name_prefix}/zulip/db/password"
   zulip_db_name_parameter_name                   = "/${local.name_prefix}/zulip/db/name"
@@ -25,8 +23,13 @@ locals {
   zulip_redis_port_parameter_name                = "/${local.name_prefix}/zulip/redis/port"
   zulip_memcached_endpoint_parameter_name        = "/${local.name_prefix}/zulip/memcached/endpoint"
   zulip_oidc_client_id_parameter_name            = "/${local.name_prefix}/zulip/oidc/client_id"
-  zulip_oidc_client_secret_parameter_name        = "/${local.name_prefix}/zulip/oidc/client_secret"
+  zulip_oidc_client_secret_parameter_name        = coalesce(var.zulip_oidc_client_secret_parameter_name, "/${local.name_prefix}/zulip/oidc/client_secret")
   zulip_oidc_idps_parameter_name                 = "/${local.name_prefix}/zulip/oidc/idps"
+  sulu_app_secret_parameter_name                 = "/${local.name_prefix}/sulu/app_secret"
+  sulu_database_url_parameter_name               = "/${local.name_prefix}/sulu/database_url"
+  sulu_mailer_dsn_parameter_name                 = "/${local.name_prefix}/sulu/mailer_dsn"
+  sulu_oidc_client_id_parameter_name             = "/${local.name_prefix}/sulu/oidc/client_id"
+  sulu_oidc_client_secret_parameter_name         = "/${local.name_prefix}/sulu/oidc/client_secret"
   keycloak_db_username_parameter_name            = "/${local.name_prefix}/keycloak/db/username"
   keycloak_db_password_parameter_name            = "/${local.name_prefix}/keycloak/db/password"
   keycloak_db_name_parameter_name                = "/${local.name_prefix}/keycloak/db/name"
@@ -59,6 +62,8 @@ locals {
   oase_db_name_parameter_name                    = "/${local.name_prefix}/oase/db/name"
   pgadmin_default_password_parameter_name        = "/${local.name_prefix}/pgadmin/default_password"
   phpmyadmin_blowfish_secret_parameter_name      = "/${local.name_prefix}/phpmyadmin/blowfish_secret"
+  phpmyadmin_oidc_client_id_parameter_name       = "/${local.name_prefix}/phpmyadmin/oidc/client_id"
+  phpmyadmin_oidc_client_secret_parameter_name   = "/${local.name_prefix}/phpmyadmin/oidc/client_secret"
   growi_db_username_parameter_name               = "/${local.name_prefix}/growi/db/username"
   growi_db_password_parameter_name               = "/${local.name_prefix}/growi/db/password"
   growi_db_name_parameter_name                   = "/${local.name_prefix}/growi/db/name"
@@ -148,35 +153,42 @@ data "aws_ssm_parameters_by_path" "existing_keycloak_admin" {
 }
 
 locals {
-  ses_smtp_username_value               = var.enable_ses_smtp_auto ? try(aws_iam_access_key.ses_smtp[0].id, null) : null
-  ses_smtp_password_value               = var.enable_ses_smtp_auto ? try(aws_iam_access_key.ses_smtp[0].ses_smtp_password_v4, null) : null
-  n8n_smtp_username_value               = coalesce(var.n8n_smtp_username, local.ses_smtp_username_value)
-  n8n_smtp_password_value               = coalesce(var.n8n_smtp_password, local.ses_smtp_password_value)
-  zulip_smtp_username_value             = coalesce(var.zulip_smtp_username, local.ses_smtp_username_value)
-  zulip_smtp_password_value             = coalesce(var.zulip_smtp_password, local.ses_smtp_password_value)
-  zulip_secret_key_value                = var.zulip_secret_key != null ? var.zulip_secret_key : (local.ssm_writes_enabled ? try(random_password.zulip_secret_key[0].result, null) : null)
-  zulip_mq_username_value               = var.zulip_mq_username
-  zulip_mq_password_value               = local.zulip_mq_password_effective
-  zulip_oidc_client_id_value            = try(coalesce(var.zulip_oidc_client_id, try(local.keycloak_managed_clients["zulip"].client_id, null)), null)
-  zulip_oidc_client_secret_value        = try(coalesce(var.zulip_oidc_client_secret, try(local.keycloak_managed_clients["zulip"].client_secret, null)), null)
-  n8n_oidc_client_id_value              = try(coalesce(var.n8n_oidc_client_id, try(local.keycloak_managed_clients["n8n"].client_id, null)), null)
-  n8n_oidc_client_secret_value          = try(coalesce(var.n8n_oidc_client_secret, try(local.keycloak_managed_clients["n8n"].client_secret, null)), null)
-  exastro_web_oidc_client_id_value      = try(coalesce(var.exastro_web_oidc_client_id, try(local.keycloak_managed_clients["exastro-web"].client_id, null)), null)
-  exastro_web_oidc_client_secret_value  = try(coalesce(var.exastro_web_oidc_client_secret, try(local.keycloak_managed_clients["exastro-web"].client_secret, null)), null)
-  exastro_api_oidc_client_id_value      = try(coalesce(var.exastro_api_oidc_client_id, try(local.keycloak_managed_clients["exastro-api"].client_id, null)), null)
-  exastro_api_oidc_client_secret_value  = try(coalesce(var.exastro_api_oidc_client_secret, try(local.keycloak_managed_clients["exastro-api"].client_secret, null)), null)
-  growi_oidc_client_id_value            = try(coalesce(var.growi_oidc_client_id, try(local.keycloak_managed_clients["growi"].client_id, null)), null)
-  growi_oidc_client_secret_value        = try(coalesce(var.growi_oidc_client_secret, try(local.keycloak_managed_clients["growi"].client_secret, null)), null)
-  cmdbuild_r2u_oidc_client_id_value     = try(coalesce(var.cmdbuild_r2u_oidc_client_id, try(local.keycloak_managed_clients["cmdbuild-r2u"].client_id, null)), null)
-  cmdbuild_r2u_oidc_client_secret_value = try(coalesce(var.cmdbuild_r2u_oidc_client_secret, try(local.keycloak_managed_clients["cmdbuild-r2u"].client_secret, null)), null)
-  orangehrm_oidc_client_id_value        = try(coalesce(var.orangehrm_oidc_client_id, try(local.keycloak_managed_clients["orangehrm"].client_id, null)), null)
-  orangehrm_oidc_client_secret_value    = try(coalesce(var.orangehrm_oidc_client_secret, try(local.keycloak_managed_clients["orangehrm"].client_secret, null)), null)
-  odoo_oidc_client_id_value             = var.enable_odoo_keycloak ? try(coalesce(var.odoo_oidc_client_id, try(local.keycloak_managed_clients["odoo"].client_id, null)), null) : null
-  odoo_oidc_client_secret_value         = var.enable_odoo_keycloak ? try(coalesce(var.odoo_oidc_client_secret, try(local.keycloak_managed_clients["odoo"].client_secret, null)), null) : null
-  gitlab_oidc_client_id_value           = var.enable_gitlab_keycloak ? try(coalesce(var.gitlab_oidc_client_id, try(local.keycloak_managed_clients["gitlab"].client_id, null)), null) : null
-  gitlab_oidc_client_secret_value       = var.enable_gitlab_keycloak ? try(coalesce(var.gitlab_oidc_client_secret, try(local.keycloak_managed_clients["gitlab"].client_secret, null)), null) : null
-  pgadmin_oidc_client_id_value          = var.enable_pgadmin_keycloak ? try(coalesce(var.pgadmin_oidc_client_id, try(local.keycloak_managed_clients["pgadmin"].client_id, null)), null) : null
-  pgadmin_oidc_client_secret_value      = var.enable_pgadmin_keycloak ? try(coalesce(var.pgadmin_oidc_client_secret, try(local.keycloak_managed_clients["pgadmin"].client_secret, null)), null) : null
+  ses_smtp_username_value                 = var.enable_ses_smtp_auto ? try(aws_iam_access_key.ses_smtp[0].id, null) : null
+  ses_smtp_password_value                 = var.enable_ses_smtp_auto ? try(aws_iam_access_key.ses_smtp[0].ses_smtp_password_v4, null) : null
+  n8n_smtp_username_value                 = coalesce(var.n8n_smtp_username, local.ses_smtp_username_value)
+  n8n_smtp_password_value                 = coalesce(var.n8n_smtp_password, local.ses_smtp_password_value)
+  zulip_smtp_username_value               = coalesce(var.zulip_smtp_username, local.ses_smtp_username_value)
+  zulip_smtp_password_value               = coalesce(var.zulip_smtp_password, local.ses_smtp_password_value)
+  zulip_secret_key_value                  = var.zulip_secret_key != null ? var.zulip_secret_key : (local.ssm_writes_enabled ? try(random_password.zulip_secret_key[0].result, null) : null)
+  zulip_mq_username_value                 = var.zulip_mq_username
+  zulip_mq_password_generate              = local.ssm_writes_enabled && var.create_ecs && var.create_zulip && var.zulip_mq_password == null
+  zulip_mq_password_value                 = var.zulip_mq_password != null ? var.zulip_mq_password : (local.zulip_mq_password_generate ? try(random_password.zulip_mq[0].result, null) : null)
+  sulu_db_username_value                  = coalesce(var.sulu_db_username, local.master_username)
+  sulu_app_secret_value                   = var.sulu_app_secret != null ? var.sulu_app_secret : (local.ssm_writes_enabled && var.create_ecs && var.create_sulu ? try(random_password.sulu_app_secret[0].result, null) : null)
+  sulu_database_url_value                 = var.create_sulu && var.create_rds ? "postgresql://${local.sulu_db_username_value}:${urlencode(local.db_password_effective)}@${aws_db_instance.this[0].address}:${aws_db_instance.this[0].port}/${var.sulu_db_name}?serverVersion=${var.rds_engine_version}&charset=utf8mb4&sslmode=require" : null
+  sulu_mailer_dsn_value                   = coalesce(var.sulu_mailer_dsn, local.ses_smtp_username_value != null && local.ses_smtp_password_value != null ? "smtp://${local.ses_smtp_username_value}:${urlencode(local.ses_smtp_password_value)}@email-smtp.${var.region}.amazonaws.com:587?encryption=tls&auth_mode=login" : null)
+  zulip_oidc_client_id_value              = try(coalesce(var.zulip_oidc_client_id, try(local.keycloak_managed_clients["zulip"].client_id, null)), null)
+  zulip_oidc_client_secret_value          = try(coalesce(var.zulip_oidc_client_secret, try(local.keycloak_managed_clients["zulip"].client_secret, null)), null)
+  exastro_web_oidc_client_id_value        = try(coalesce(var.exastro_web_oidc_client_id, try(local.keycloak_managed_clients["exastro-web"].client_id, null)), null)
+  exastro_web_oidc_client_secret_value    = try(coalesce(var.exastro_web_oidc_client_secret, try(local.keycloak_managed_clients["exastro-web"].client_secret, null)), null)
+  exastro_api_oidc_client_id_value        = try(coalesce(var.exastro_api_oidc_client_id, try(local.keycloak_managed_clients["exastro-api"].client_id, null)), null)
+  exastro_api_oidc_client_secret_value    = try(coalesce(var.exastro_api_oidc_client_secret, try(local.keycloak_managed_clients["exastro-api"].client_secret, null)), null)
+  growi_oidc_client_id_value              = try(coalesce(var.growi_oidc_client_id, try(local.keycloak_managed_clients["growi"].client_id, null)), null)
+  growi_oidc_client_secret_value          = try(coalesce(var.growi_oidc_client_secret, try(local.keycloak_managed_clients["growi"].client_secret, null)), null)
+  cmdbuild_r2u_oidc_client_id_value       = try(coalesce(var.cmdbuild_r2u_oidc_client_id, try(local.keycloak_managed_clients["cmdbuild-r2u"].client_id, null)), null)
+  cmdbuild_r2u_oidc_client_secret_value   = try(coalesce(var.cmdbuild_r2u_oidc_client_secret, try(local.keycloak_managed_clients["cmdbuild-r2u"].client_secret, null)), null)
+  orangehrm_oidc_client_id_value          = try(coalesce(var.orangehrm_oidc_client_id, try(local.keycloak_managed_clients["orangehrm"].client_id, null)), null)
+  orangehrm_oidc_client_secret_value      = try(coalesce(var.orangehrm_oidc_client_secret, try(local.keycloak_managed_clients["orangehrm"].client_secret, null)), null)
+  odoo_oidc_client_id_value               = var.enable_odoo_keycloak ? try(coalesce(var.odoo_oidc_client_id, try(local.keycloak_managed_clients["odoo"].client_id, null)), null) : null
+  odoo_oidc_client_secret_value           = var.enable_odoo_keycloak ? try(coalesce(var.odoo_oidc_client_secret, try(local.keycloak_managed_clients["odoo"].client_secret, null)), null) : null
+  gitlab_oidc_client_id_value             = var.enable_gitlab_keycloak ? try(coalesce(var.gitlab_oidc_client_id, try(local.keycloak_managed_clients["gitlab"].client_id, null)), null) : null
+  gitlab_oidc_client_secret_value         = var.enable_gitlab_keycloak ? try(coalesce(var.gitlab_oidc_client_secret, try(local.keycloak_managed_clients["gitlab"].client_secret, null)), null) : null
+  pgadmin_oidc_client_id_value            = var.enable_pgadmin_keycloak ? try(coalesce(var.pgadmin_oidc_client_id, try(local.keycloak_managed_clients["pgadmin"].client_id, null)), null) : null
+  pgadmin_oidc_client_secret_value        = var.enable_pgadmin_keycloak ? try(coalesce(var.pgadmin_oidc_client_secret, try(local.keycloak_managed_clients["pgadmin"].client_secret, null)), null) : null
+  phpmyadmin_oidc_client_id_ssm_value     = var.enable_phpmyadmin_alb_oidc ? try(data.aws_ssm_parameter.phpmyadmin_oidc_client_id[0].value, null) : null
+  phpmyadmin_oidc_client_secret_ssm_value = var.enable_phpmyadmin_alb_oidc ? try(data.aws_ssm_parameter.phpmyadmin_oidc_client_secret[0].value, null) : null
+  phpmyadmin_oidc_client_id_value         = var.enable_phpmyadmin_alb_oidc ? coalesce(var.phpmyadmin_oidc_client_id, local.phpmyadmin_oidc_client_id_ssm_value) : null
+  phpmyadmin_oidc_client_secret_value     = var.enable_phpmyadmin_alb_oidc ? coalesce(var.phpmyadmin_oidc_client_secret, local.phpmyadmin_oidc_client_secret_ssm_value) : null
   keycloak_admin_params_from_ssm = zipmap(
     try(data.aws_ssm_parameters_by_path.existing_keycloak_admin[0].names, []),
     try(data.aws_ssm_parameters_by_path.existing_keycloak_admin[0].values, []),
@@ -188,7 +200,7 @@ locals {
           oidc_url     = "https://keycloak.${local.hosted_zone_name_input}/realms/master"
           display_name = "Keycloak"
           client_id    = local.zulip_oidc_client_id_value
-          secret       = local.zulip_oidc_client_secret_value
+          secret       = null
           api_url      = "https://keycloak.${local.hosted_zone_name_input}/realms/master/protocol/openid-connect/userinfo"
           extra_params = { scope = "openid email profile" }
         }
@@ -200,8 +212,6 @@ locals {
     (var.zulip_oidc_client_id != null && var.zulip_oidc_client_secret != null) ||
     local.manage_keycloak_clients_effective
   )
-  n8n_oidc_client_id_write_enabled              = local.ssm_writes_enabled && var.create_ecs && var.create_n8n && var.enable_n8n_keycloak && (var.n8n_oidc_client_id != null || local.manage_keycloak_clients_effective)
-  n8n_oidc_client_secret_write_enabled          = local.ssm_writes_enabled && var.create_ecs && var.create_n8n && var.enable_n8n_keycloak && (var.n8n_oidc_client_secret != null || local.manage_keycloak_clients_effective)
   zulip_oidc_client_id_write_enabled            = local.ssm_writes_enabled && var.create_ecs && var.create_zulip && var.enable_zulip_keycloak && (var.zulip_oidc_client_id != null || local.manage_keycloak_clients_effective)
   zulip_oidc_client_secret_write_enabled        = local.ssm_writes_enabled && var.create_ecs && var.create_zulip && var.enable_zulip_keycloak && (var.zulip_oidc_client_secret != null || local.manage_keycloak_clients_effective)
   exastro_web_oidc_client_id_write_enabled      = local.ssm_writes_enabled && var.create_ecs && var.create_exastro_web_server && var.enable_exastro_web_keycloak && (var.exastro_web_oidc_client_id != null || local.manage_keycloak_clients_effective)
@@ -220,6 +230,8 @@ locals {
   gitlab_oidc_client_secret_write_enabled       = local.ssm_writes_enabled && var.create_ecs && var.create_gitlab && var.enable_gitlab_keycloak && (var.gitlab_oidc_client_secret != null || local.manage_keycloak_clients_effective)
   pgadmin_oidc_client_id_write_enabled          = local.ssm_writes_enabled && var.create_ecs && var.create_pgadmin && var.enable_pgadmin_keycloak && (var.pgadmin_oidc_client_id != null || local.manage_keycloak_clients_effective)
   pgadmin_oidc_client_secret_write_enabled      = local.ssm_writes_enabled && var.create_ecs && var.create_pgadmin && var.enable_pgadmin_keycloak && (var.pgadmin_oidc_client_secret != null || local.manage_keycloak_clients_effective)
+  phpmyadmin_oidc_client_id_write_enabled       = local.ssm_writes_enabled && var.create_ecs && var.create_phpmyadmin && var.enable_phpmyadmin_alb_oidc && var.phpmyadmin_oidc_client_id != null
+  phpmyadmin_oidc_client_secret_write_enabled   = local.ssm_writes_enabled && var.create_ecs && var.create_phpmyadmin && var.enable_phpmyadmin_alb_oidc && var.phpmyadmin_oidc_client_secret != null
   keycloak_smtp_username_value                  = coalesce(var.keycloak_smtp_username, local.ses_smtp_username_value)
   keycloak_smtp_password_value                  = coalesce(var.keycloak_smtp_password, local.ses_smtp_password_value)
   keycloak_db_username_value                    = coalesce(var.keycloak_db_username, local.master_username)
@@ -314,28 +326,6 @@ resource "aws_ssm_parameter" "n8n_db_name" {
   value = var.n8n_db_name
 
   tags = merge(local.tags, { Name = "${local.name_prefix}-n8n-db-name" })
-}
-
-resource "aws_ssm_parameter" "n8n_oidc_client_id" {
-  count = local.n8n_oidc_client_id_write_enabled ? 1 : 0
-
-  name      = local.n8n_oidc_client_id_parameter_name
-  type      = "SecureString"
-  value     = local.n8n_oidc_client_id_value
-  overwrite = true
-
-  tags = merge(local.tags, { Name = "${local.name_prefix}-n8n-oidc-client-id" })
-}
-
-resource "aws_ssm_parameter" "n8n_oidc_client_secret" {
-  count = local.n8n_oidc_client_secret_write_enabled ? 1 : 0
-
-  name      = local.n8n_oidc_client_secret_parameter_name
-  type      = "SecureString"
-  value     = local.n8n_oidc_client_secret_value
-  overwrite = true
-
-  tags = merge(local.tags, { Name = "${local.name_prefix}-n8n-oidc-client-secret" })
 }
 
 resource "aws_ssm_parameter" "n8n_smtp_username" {
@@ -468,7 +458,7 @@ resource "aws_ssm_parameter" "growi_db_username" {
 }
 
 resource "aws_ssm_parameter" "growi_db_password" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_growi ? 1 : 0) : 0
+  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_growi && var.create_growi_docdb ? 1 : 0) : 0
 
   name      = local.growi_db_password_parameter_name
   type      = "SecureString"
@@ -1173,6 +1163,40 @@ resource "aws_ssm_parameter" "pgadmin_oidc_client_secret" {
   tags = merge(local.tags, { Name = "${local.name_prefix}-pgadmin-oidc-client-secret" })
 }
 
+data "aws_ssm_parameter" "phpmyadmin_oidc_client_id" {
+  count           = var.create_ecs && var.create_phpmyadmin && var.enable_phpmyadmin_alb_oidc ? 1 : 0
+  name            = local.phpmyadmin_oidc_client_id_parameter_name
+  with_decryption = true
+}
+
+data "aws_ssm_parameter" "phpmyadmin_oidc_client_secret" {
+  count           = var.create_ecs && var.create_phpmyadmin && var.enable_phpmyadmin_alb_oidc ? 1 : 0
+  name            = local.phpmyadmin_oidc_client_secret_parameter_name
+  with_decryption = true
+}
+
+resource "aws_ssm_parameter" "phpmyadmin_oidc_client_id" {
+  count = local.phpmyadmin_oidc_client_id_write_enabled ? 1 : 0
+
+  name      = local.phpmyadmin_oidc_client_id_parameter_name
+  type      = "SecureString"
+  value     = local.phpmyadmin_oidc_client_id_value
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-phpmyadmin-oidc-client-id" })
+}
+
+resource "aws_ssm_parameter" "phpmyadmin_oidc_client_secret" {
+  count = local.phpmyadmin_oidc_client_secret_write_enabled ? 1 : 0
+
+  name      = local.phpmyadmin_oidc_client_secret_parameter_name
+  type      = "SecureString"
+  value     = local.phpmyadmin_oidc_client_secret_value
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-phpmyadmin-oidc-client-secret" })
+}
+
 resource "aws_ssm_parameter" "growi_smtp_username" {
   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_growi && local.growi_smtp_params_enabled ? 1 : 0) : 0
 
@@ -1332,9 +1356,23 @@ resource "aws_ssm_parameter" "phpmyadmin_blowfish_secret" {
   tags = merge(local.tags, { Name = "${local.name_prefix}-phpmyadmin-blowfish-secret" })
 }
 
+resource "random_password" "zulip_mq" {
+  count = local.zulip_mq_password_generate ? 1 : 0
+
+  length           = 32
+  special          = true
+  override_special = "!@#$%^&*()_+-=[]{}|"
+}
+
 resource "random_password" "zulip_secret_key" {
   count   = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip && var.zulip_secret_key == null ? 1 : 0) : 0
   length  = 50
+  special = true
+}
+
+resource "random_password" "sulu_app_secret" {
+  count   = local.ssm_writes_enabled ? (var.create_ecs && var.create_sulu && var.sulu_app_secret == null ? 1 : 0) : 0
+  length  = 64
   special = true
 }
 
@@ -1389,6 +1427,39 @@ resource "aws_ssm_parameter" "zulip_datasource" {
   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-datasource" })
 }
 
+resource "aws_ssm_parameter" "sulu_app_secret" {
+  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_sulu ? 1 : 0) : 0
+
+  name      = local.sulu_app_secret_parameter_name
+  type      = "SecureString"
+  value     = local.sulu_app_secret_value
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-sulu-app-secret" })
+}
+
+resource "aws_ssm_parameter" "sulu_database_url" {
+  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_sulu && var.create_rds ? 1 : 0) : 0
+
+  name      = local.sulu_database_url_parameter_name
+  type      = "SecureString"
+  value     = local.sulu_database_url_value
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-sulu-db-url" })
+}
+
+resource "aws_ssm_parameter" "sulu_mailer_dsn" {
+  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_sulu && (var.sulu_mailer_dsn != null || var.enable_ses_smtp_auto) ? 1 : 0) : 0
+
+  name      = local.sulu_mailer_dsn_parameter_name
+  type      = "SecureString"
+  value     = local.sulu_mailer_dsn_value
+  overwrite = true
+
+  tags = merge(local.tags, { Name = "${local.name_prefix}-sulu-mailer-dsn" })
+}
+
 resource "aws_ssm_parameter" "zulip_mq_username" {
   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip && local.zulip_mq_username_value != null ? 1 : 0) : 0
 
@@ -1401,7 +1472,7 @@ resource "aws_ssm_parameter" "zulip_mq_username" {
 }
 
 resource "aws_ssm_parameter" "zulip_mq_password" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip && local.zulip_mq_password_value != null ? 1 : 0) : 0
+  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip && (var.zulip_mq_password != null || local.zulip_mq_password_generate) ? 1 : 0) : 0
 
   name      = local.zulip_mq_password_parameter_name
   type      = "SecureString"
@@ -1411,71 +1482,71 @@ resource "aws_ssm_parameter" "zulip_mq_password" {
   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-mq-password" })
 }
 
-resource "aws_ssm_parameter" "zulip_mq_host" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
+# resource "aws_ssm_parameter" "zulip_mq_host" {
+#   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
 
-  name      = local.zulip_mq_host_parameter_name
-  type      = "String"
-  value     = coalesce(local.zulip_mq_host, "")
-  overwrite = true
+#   name      = local.zulip_mq_host_parameter_name
+#   type      = "String"
+#   value     = coalesce(local.zulip_mq_host, "")
+#   overwrite = true
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-mq-host" })
-}
+#   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-mq-host" })
+# }
 
-resource "aws_ssm_parameter" "zulip_mq_port" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
+# resource "aws_ssm_parameter" "zulip_mq_port" {
+#   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
 
-  name      = local.zulip_mq_port_parameter_name
-  type      = "String"
-  value     = local.zulip_mq_port_effective != null ? tostring(local.zulip_mq_port_effective) : ""
-  overwrite = true
+#   name      = local.zulip_mq_port_parameter_name
+#   type      = "String"
+#   value     = local.zulip_mq_port_effective != null ? tostring(local.zulip_mq_port_effective) : ""
+#   overwrite = true
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-mq-port" })
-}
+#   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-mq-port" })
+# }
 
-resource "aws_ssm_parameter" "zulip_mq_amqp_endpoint" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
+# resource "aws_ssm_parameter" "zulip_mq_amqp_endpoint" {
+#   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
 
-  name      = local.zulip_mq_endpoint_parameter_name
-  type      = "String"
-  value     = coalesce(local.zulip_mq_amqp_endpoint, "")
-  overwrite = true
+#   name      = local.zulip_mq_endpoint_parameter_name
+#   type      = "String"
+#   value     = coalesce(local.zulip_mq_amqp_endpoint, "")
+#   overwrite = true
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-mq-amqp-endpoint" })
-}
+#   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-mq-amqp-endpoint" })
+# }
 
-resource "aws_ssm_parameter" "zulip_redis_host" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
+# resource "aws_ssm_parameter" "zulip_redis_host" {
+#   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
 
-  name      = local.zulip_redis_host_parameter_name
-  type      = "String"
-  value     = coalesce(local.zulip_redis_host, "")
-  overwrite = true
+#   name      = local.zulip_redis_host_parameter_name
+#   type      = "String"
+#   value     = coalesce(local.zulip_redis_host, "")
+#   overwrite = true
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-redis-host" })
-}
+#   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-redis-host" })
+# }
 
-resource "aws_ssm_parameter" "zulip_redis_port" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
+# resource "aws_ssm_parameter" "zulip_redis_port" {
+#   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
 
-  name      = local.zulip_redis_port_parameter_name
-  type      = "String"
-  value     = tostring(local.zulip_redis_port)
-  overwrite = true
+#   name      = local.zulip_redis_port_parameter_name
+#   type      = "String"
+#   value     = tostring(local.zulip_redis_port)
+#   overwrite = true
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-redis-port" })
-}
+#   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-redis-port" })
+# }
 
-resource "aws_ssm_parameter" "zulip_memcached_endpoint" {
-  count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
+# resource "aws_ssm_parameter" "zulip_memcached_endpoint" {
+#   count = local.ssm_writes_enabled ? (var.create_ecs && var.create_zulip ? 1 : 0) : 0
 
-  name      = local.zulip_memcached_endpoint_parameter_name
-  type      = "String"
-  value     = coalesce(local.zulip_memcached_endpoint, "")
-  overwrite = true
+#   name      = local.zulip_memcached_endpoint_parameter_name
+#   type      = "String"
+#   value     = coalesce(local.zulip_memcached_endpoint, "")
+#   overwrite = true
 
-  tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-memcached-endpoint" })
-}
+#   tags = merge(local.tags, { Name = "${local.name_prefix}-zulip-memcached-endpoint" })
+# }
 
 resource "aws_ssm_parameter" "zulip_oidc_client_id" {
   count = local.zulip_oidc_client_id_write_enabled ? 1 : 0

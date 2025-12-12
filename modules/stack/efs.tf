@@ -2,6 +2,9 @@ locals {
   n8n_efs_name           = "${local.name_prefix}-n8n-efs"
   n8n_efs_sg             = "${local.name_prefix}-n8n-efs-sg"
   n8n_efs_az             = coalesce(var.n8n_efs_availability_zone, try(local.private_subnets[0].az, null), "${var.region}a")
+  sulu_efs_name          = "${local.name_prefix}-sulu-efs"
+  sulu_efs_sg            = "${local.name_prefix}-sulu-efs-sg"
+  sulu_efs_az            = coalesce(var.sulu_efs_availability_zone, try(local.private_subnets[0].az, null), "${var.region}a")
   zulip_efs_name         = "${local.name_prefix}-zulip-efs"
   zulip_efs_sg           = "${local.name_prefix}-zulip-efs-sg"
   zulip_efs_az           = coalesce(var.zulip_efs_availability_zone, try(local.private_subnets[0].az, null), "${var.region}a")
@@ -34,6 +37,15 @@ data "aws_resourcegroupstaggingapi_resources" "n8n_efs" {
   tag_filter {
     key    = "Name"
     values = [local.n8n_efs_name]
+  }
+}
+
+data "aws_resourcegroupstaggingapi_resources" "sulu_efs" {
+  resource_type_filters = ["elasticfilesystem"]
+
+  tag_filter {
+    key    = "Name"
+    values = [local.sulu_efs_name]
   }
 }
 
@@ -113,6 +125,7 @@ data "aws_resourcegroupstaggingapi_resources" "gitlab_config_efs" {
 
 locals {
   n8n_existing_efs_id           = try(regex("fs-[0-9a-f]+", data.aws_resourcegroupstaggingapi_resources.n8n_efs.resource_tag_mapping_list[0].resource_arn), null)
+  sulu_existing_efs_id          = try(regex("fs-[0-9a-f]+", data.aws_resourcegroupstaggingapi_resources.sulu_efs.resource_tag_mapping_list[0].resource_arn), null)
   zulip_existing_efs_id         = try(regex("fs-[0-9a-f]+", data.aws_resourcegroupstaggingapi_resources.zulip_efs.resource_tag_mapping_list[0].resource_arn), null)
   pgadmin_existing_efs_id       = try(regex("fs-[0-9a-f]+", data.aws_resourcegroupstaggingapi_resources.pgadmin_efs.resource_tag_mapping_list[0].resource_arn), null)
   exastro_existing_efs_id       = try(regex("fs-[0-9a-f]+", data.aws_resourcegroupstaggingapi_resources.exastro_efs.resource_tag_mapping_list[0].resource_arn), null)
@@ -126,11 +139,12 @@ locals {
 locals {
   # Keep EFS resources managed unless an explicit filesystem_id is provided.
   create_n8n_efs_effective           = (var.create_n8n_efs || (var.create_ecs && var.create_n8n)) && var.n8n_filesystem_id == null
+  create_sulu_efs_effective          = (var.create_sulu_efs || (var.create_ecs && var.create_sulu)) && var.sulu_filesystem_id == null
   create_zulip_efs_effective         = (var.create_zulip_efs || (var.create_ecs && var.create_zulip)) && var.zulip_filesystem_id == null
   create_pgadmin_efs_effective       = (var.create_pgadmin_efs || (var.create_ecs && var.create_pgadmin)) && var.pgadmin_filesystem_id == null
   create_exastro_efs_effective       = (var.create_exastro_efs || (var.create_ecs && (var.create_exastro_web_server || var.create_exastro_api_admin))) && var.exastro_filesystem_id == null
   create_cmdbuild_r2u_efs_effective  = (var.create_cmdbuild_r2u_efs || (var.create_ecs && var.create_cmdbuild_r2u)) && var.cmdbuild_r2u_filesystem_id == null
-  create_keycloak_efs_effective      = (var.create_keycloak_efs || (var.create_ecs && var.create_keycloak)) && var.keycloak_filesystem_id == null
+  create_keycloak_efs_effective      = (var.create_keycloak_efs || (var.create_ecs && var.create_keycloak)) && trimspace(var.keycloak_filesystem_id != null ? var.keycloak_filesystem_id : "") == ""
   create_odoo_efs_effective          = (var.create_odoo_efs || (var.create_ecs && var.create_odoo)) && var.odoo_filesystem_id == null
   create_gitlab_data_efs_effective   = (var.create_gitlab_data_efs || (var.create_ecs && var.create_gitlab)) && var.gitlab_data_filesystem_id == null
   create_gitlab_config_efs_effective = (var.create_gitlab_config_efs || (var.create_ecs && var.create_gitlab)) && var.gitlab_config_filesystem_id == null
@@ -158,6 +172,30 @@ resource "aws_security_group" "n8n_efs" {
   }
 
   tags = merge(local.tags, { Name = local.n8n_efs_sg })
+}
+
+resource "aws_security_group" "sulu_efs" {
+  count = local.create_sulu_efs_effective && var.sulu_filesystem_id == null ? 1 : 0
+
+  name        = local.sulu_efs_sg
+  description = "EFS access for sulu"
+  vpc_id      = local.vpc_id
+
+  ingress {
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_service[0].id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.tags, { Name = local.sulu_efs_sg })
 }
 
 resource "aws_security_group" "zulip_efs" {
@@ -388,6 +426,44 @@ locals {
     var.n8n_filesystem_id != null && var.n8n_filesystem_id != "" ? var.n8n_filesystem_id :
     local.n8n_existing_efs_id != null && local.n8n_existing_efs_id != "" ? local.n8n_existing_efs_id :
     local.create_n8n_efs_effective ? try(aws_efs_file_system.n8n[0].id, null) : null
+  )
+}
+
+resource "aws_efs_file_system" "sulu" {
+  count = local.create_sulu_efs_effective && var.sulu_filesystem_id == null ? 1 : 0
+
+  performance_mode       = "generalPurpose"
+  encrypted              = true
+  availability_zone_name = local.sulu_efs_az
+
+  lifecycle_policy {
+    transition_to_ia = "AFTER_1_DAY"
+  }
+
+  lifecycle {
+    prevent_destroy = false
+  }
+
+  tags = merge(local.tags, { Name = local.sulu_efs_name })
+}
+
+locals {
+  sulu_efs_subnet = length(local.private_subnets) > 0 ? local.private_subnets[0] : null
+}
+
+resource "aws_efs_mount_target" "sulu" {
+  count = local.create_sulu_efs_effective ? 1 : 0
+
+  file_system_id  = local.sulu_filesystem_id_effective
+  subnet_id       = local.private_subnet_ids[local.sulu_efs_subnet.name]
+  security_groups = [aws_security_group.sulu_efs[0].id]
+}
+
+locals {
+  sulu_filesystem_id_effective = (
+    var.sulu_filesystem_id != null && var.sulu_filesystem_id != "" ? var.sulu_filesystem_id :
+    local.sulu_existing_efs_id != null && local.sulu_existing_efs_id != "" ? local.sulu_existing_efs_id :
+    local.create_sulu_efs_effective ? try(aws_efs_file_system.sulu[0].id, null) : null
   )
 }
 

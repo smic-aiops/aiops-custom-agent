@@ -1,3 +1,117 @@
+locals {
+  zulip_error_log_shipper_snippet = <<-EOT
+    set -euo pipefail
+
+    log_file="/var/log/zulip/errors.log"
+    log_dir="$(dirname "$${log_file}")"
+    mkdir -p "$${log_dir}"
+    chown zulip:zulip "$${log_dir}"
+    touch "$${log_file}"
+    chown zulip:zulip "$${log_file}"
+
+    tail -n0 -F "$${log_file}" &
+    tail_pid=$$!
+
+    cleanup() {
+      kill "$${tail_pid}" >/dev/null 2>&1 || true
+    }
+
+    trap cleanup EXIT
+  EOT
+
+  zulip_missing_dictionaries_snippet = <<-EOT
+    crudini --set /etc/zulip/zulip.conf postgresql missing_dictionaries true
+  EOT
+
+  zulip_oidc_idps_patch_snippet = <<-EOT
+    oidc_idps_var="$${SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS:-}"
+    if [ -z "$${oidc_idps_var:-}" ] && [ -n "$${OIDC_IDPS:-}" ]; then
+      oidc_idps_var="$${OIDC_IDPS}"
+    fi
+    if [ -n "$${oidc_idps_var:-}" ] && command -v python3 >/dev/null 2>&1; then
+      patched="$(
+        python3 - <<'PY' || exit 0
+import os
+import sys
+import json
+
+try:
+    import yaml
+except Exception:
+    sys.exit(0)
+
+oidc_idps = os.environ.get("SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS") or os.environ.get("OIDC_IDPS")
+client_id = os.environ.get("OIDC_CLIENT_ID") or None
+secret = os.environ.get("OIDC_CLIENT_SECRET") or None
+if not oidc_idps or not secret:
+    sys.exit(0)
+
+data = yaml.safe_load(oidc_idps) or {}
+changed = False
+if isinstance(data, dict):
+    for name, cfg in data.items():
+        if not isinstance(cfg, dict):
+            continue
+        if not cfg.get("client_id") and client_id:
+            cfg["client_id"] = client_id
+            changed = True
+        secret_val = cfg.get("secret")
+        if secret_val in (None, "", "null") and secret:
+            cfg["secret"] = secret
+            changed = True
+
+if changed:
+    print(json.dumps(data))
+else:
+    print(json.dumps(data))
+PY
+      )"
+      if [ -n "$${patched}" ]; then
+        export SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS="$${patched}"
+      fi
+    fi
+  EOT
+
+  zulip_trusted_proxy_cidrs_input  = coalesce(var.zulip_trusted_proxy_cidrs, [])
+  zulip_trusted_proxy_cidrs        = length(local.zulip_trusted_proxy_cidrs_input) > 0 ? local.zulip_trusted_proxy_cidrs_input : [for s in local.public_subnets : s.cidr]
+  zulip_loadbalancer_ips           = join(",", local.zulip_trusted_proxy_cidrs)
+  zulip_trust_proxies_snippet      = <<-EOT
+    crudini --set /etc/zulip/zulip.conf loadbalancer ips "${local.zulip_loadbalancer_ips}"
+  EOT
+  zulip_social_auth_secret_snippet = <<-EOT
+    if [ -n "$${OIDC_CLIENT_SECRET:-}" ]; then
+      secrets_file="/etc/zulip/zulip-secrets.conf"
+      touch "$${secrets_file}"
+      chown zulip:zulip "$${secrets_file}"
+      chmod 640 "$${secrets_file}"
+      if command -v crudini >/dev/null 2>&1; then
+        crudini --set "$${secrets_file}" secrets social_auth_oidc_secret "$${OIDC_CLIENT_SECRET}"
+      else
+        tmp_file="$${secrets_file}.tmp"
+        if [ -f "$${secrets_file}" ]; then
+          grep -v '^social_auth_oidc_secret' "$${secrets_file}" >"$${tmp_file}" || true
+        else
+          : >"$${tmp_file}"
+        fi
+        if ! grep -q '^\[secrets\]' "$${tmp_file}" >/dev/null 2>&1; then
+          printf '[secrets]\n' >>"$${tmp_file}"
+        fi
+        echo "social_auth_oidc_secret = $${OIDC_CLIENT_SECRET}" >>"$${tmp_file}"
+        mv "$${tmp_file}" "$${secrets_file}"
+      fi
+    fi
+  EOT
+
+  zulip_entrypoint_command = join("\n", compact([
+    trimspace(local.zulip_error_log_shipper_snippet),
+    trimspace(local.zulip_trust_proxies_snippet),
+    trimspace(local.zulip_social_auth_secret_snippet),
+    trimspace(local.zulip_oidc_idps_patch_snippet),
+    var.zulip_missing_dictionaries ? trimspace(local.zulip_missing_dictionaries_snippet) : "",
+    "exec /sbin/entrypoint.sh app:run"
+  ]))
+}
+
 resource "aws_ecs_task_definition" "growi" {
   count = var.create_ecs && var.create_growi ? 1 : 0
 
@@ -488,57 +602,115 @@ resource "aws_ecs_task_definition" "zulip" {
           })
         })
       }),
-      merge(
-        local.ecs_base_container,
-        {
-          name  = "zulip"
-          image = local.ecr_uri_zulip
-          portMappings = [{
-            containerPort = 80
-            hostPort      = 80
-            protocol      = "tcp"
-          }]
-          environment = [for k, v in merge(local.default_environment_zulip, var.zulip_environment) : { name = k, value = v }]
-          secrets = concat(
-            var.zulip_secrets,
-            [for k, v in local.ssm_param_arns_zulip : { name = k, valueFrom = v }]
-          )
-          mountPoints = local.zulip_efs_id != null ? [{
-            sourceVolume  = "zulip-data"
-            containerPath = var.zulip_filesystem_path
-            readOnly      = false
-          }] : []
-          dependsOn = concat(
-            local.zulip_efs_id != null ? [
-              {
-                containerName = "zulip-fs-init"
-                condition     = "COMPLETE"
-              }
-            ] : [],
-            [
-              {
-                containerName = "zulip-db-init"
-                condition     = "COMPLETE"
-              }
-            ]
-          )
-          logConfiguration = merge(local.ecs_base_container.logConfiguration, {
-            options = merge(local.ecs_base_container.logConfiguration.options, {
-              "awslogs-group" = aws_cloudwatch_log_group.ecs["zulip"].name
-            })
+      merge(local.ecs_base_container, {
+        name  = "zulip-memcached"
+        image = "public.ecr.aws/docker/library/memcached:1.6-alpine"
+        portMappings = [{
+          containerPort = 11211
+          hostPort      = 11211
+          protocol      = "tcp"
+        }]
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group" = aws_cloudwatch_log_group.ecs["zulip"].name
           })
-        },
-        var.zulip_missing_dictionaries ? {
-          entryPoint = ["/bin/bash", "-c"]
-          command = [
-            <<-EOT
-              set -euo pipefail
-              crudini --set /etc/zulip/zulip.conf postgresql missing_dictionaries true
-              exec /sbin/entrypoint.sh app:run
-            EOT
+        })
+      }),
+      merge(local.ecs_base_container, {
+        name    = "zulip-redis"
+        image   = "public.ecr.aws/docker/library/redis:7.2-alpine"
+        command = ["redis-server", "--save", "", "--appendonly", "no"]
+        portMappings = [{
+          containerPort = 6379
+          hostPort      = 6379
+          protocol      = "tcp"
+        }]
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group" = aws_cloudwatch_log_group.ecs["zulip"].name
+          })
+        })
+      }),
+      merge(local.ecs_base_container, {
+        name  = "zulip-rabbitmq"
+        image = "public.ecr.aws/docker/library/rabbitmq:3.13-alpine"
+        portMappings = [{
+          containerPort = 5672
+          hostPort      = 5672
+          protocol      = "tcp"
+        }]
+        environment = [{
+          name  = "RABBITMQ_DEFAULT_VHOST"
+          value = "/"
+        }]
+        secrets = concat(
+          contains(keys(local.ssm_param_arns_zulip), "RABBITMQ_USERNAME") ? [{
+            name      = "RABBITMQ_DEFAULT_USER"
+            valueFrom = local.ssm_param_arns_zulip["RABBITMQ_USERNAME"]
+          }] : [],
+          contains(keys(local.ssm_param_arns_zulip), "RABBITMQ_PASSWORD") ? [{
+            name      = "RABBITMQ_DEFAULT_PASS"
+            valueFrom = local.ssm_param_arns_zulip["RABBITMQ_PASSWORD"]
+          }] : []
+        )
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group" = aws_cloudwatch_log_group.ecs["zulip"].name
+          })
+        })
+      }),
+      merge(local.ecs_base_container, {
+        name  = "zulip"
+        image = local.ecr_uri_zulip
+        portMappings = [{
+          containerPort = 80
+          hostPort      = 80
+          protocol      = "tcp"
+        }]
+        environment = [for k, v in merge(local.default_environment_zulip, local.zulip_keycloak_environment, var.zulip_environment) : { name = k, value = v }]
+        secrets = concat(
+          var.zulip_secrets,
+          [for k, v in local.ssm_param_arns_zulip : { name = k, valueFrom = v }]
+        )
+        mountPoints = local.zulip_efs_id != null ? [{
+          sourceVolume  = "zulip-data"
+          containerPath = var.zulip_filesystem_path
+          readOnly      = false
+        }] : []
+        dependsOn = concat(
+          local.zulip_efs_id != null ? [
+            {
+              containerName = "zulip-fs-init"
+              condition     = "COMPLETE"
+            }
+          ] : [],
+          [
+            {
+              containerName = "zulip-db-init"
+              condition     = "COMPLETE"
+            },
+            {
+              containerName = "zulip-memcached"
+              condition     = "START"
+            },
+            {
+              containerName = "zulip-redis"
+              condition     = "START"
+            },
+            {
+              containerName = "zulip-rabbitmq"
+              condition     = "START"
+            }
           ]
-        } : {}
-      )
+        )
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group" = aws_cloudwatch_log_group.ecs["zulip"].name
+          })
+        })
+        entryPoint = ["/bin/bash", "-c"]
+        command    = [local.zulip_entrypoint_command]
+      })
     ]
   ))
 

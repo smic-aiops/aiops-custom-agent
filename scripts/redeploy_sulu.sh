@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Redeploy main-svc ECS service by forcing a new deployment.
+# Redeploy sulu ECS service by forcing a new deployment.
 # AWS_PROFILE resolution: env > terraform output aws_profile > Admin-AIOps.
 
 if [ -z "${AWS_PROFILE:-}" ]; then
@@ -23,7 +23,7 @@ if [ -z "${NAME_PREFIX}" ] || [ "${NAME_PREFIX}" = "${CLUSTER_NAME}" ]; then
   NAME_PREFIX="prod-aiops"
 fi
 
-SERVICE_NAME="${NAME_PREFIX}-main-svc"
+SERVICE_NAME="${NAME_PREFIX}-sulu"
 
 # Use the current desired count to avoid accidental scaling changes.
 CURRENT_DESIRED="$(aws ecs describe-services \

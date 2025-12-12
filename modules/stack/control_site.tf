@@ -2,10 +2,10 @@ locals {
   control_site_domain      = "${var.control_subdomain}.${local.hosted_zone_name_input}"
   control_site_bucket_name = "${local.name_prefix}-${replace(local.hosted_zone_name_input, ".", "-")}-control-site"
   control_site_enabled     = var.enable_service_control
-  main_svc_control_api_base_url_effective = trim(
+  sulu_control_api_base_url_effective = trim(
     coalesce(
-      var.main_svc_control_api_base_url != "" ? var.main_svc_control_api_base_url : null,
-      try(aws_apigatewayv2_stage.main_svc_control[0].invoke_url, null),
+      var.sulu_control_api_base_url != "" ? var.sulu_control_api_base_url : null,
+      try(aws_apigatewayv2_stage.sulu_control[0].invoke_url, null),
       ""
     ),
     "/"
@@ -18,9 +18,43 @@ locals {
     ),
     "/"
   )
-  control_api_base_url_effective = local.service_control_api_base_url_effective != "" ? local.service_control_api_base_url_effective : local.main_svc_control_api_base_url_effective
-  control_site_index             = templatefile("${path.module}/templates/control-index.html.tftpl", { api_base_url = local.control_api_base_url_effective })
-  wildcard_cf_cert_name          = "${local.name_prefix}-cf-wildcard-cert"
+  control_api_base_url_effective = local.service_control_api_base_url_effective != "" ? local.service_control_api_base_url_effective : local.sulu_control_api_base_url_effective
+  keycloak_base_url_effective = coalesce(
+    var.keycloak_base_url != null && var.keycloak_base_url != "" ? var.keycloak_base_url : null,
+    "https://keycloak.${local.hosted_zone_name_input}"
+  )
+  control_site_keycloak_realm = coalesce(
+    var.keycloak_realm != null && var.keycloak_realm != "" ? var.keycloak_realm : null,
+    "master"
+  )
+  service_control_keycloak_client_id_effective = coalesce(
+    var.service_control_keycloak_client_id != null && var.service_control_keycloak_client_id != "" ? var.service_control_keycloak_client_id : null,
+    "service-control"
+  )
+  service_control_autostop_flags = {
+    keycloak       = var.enable_keycloak_autostop
+    zulip          = var.enable_zulip_autostop
+    growi          = var.enable_growi_autostop
+    odoo           = var.enable_odoo_autostop
+    orangehrm      = var.enable_orangehrm_autostop
+    "cmdbuild-r2u" = var.enable_cmdbuild_r2u_autostop
+    n8n            = var.enable_n8n_autostop
+    sulu           = var.enable_sulu_autostop
+    "exastro-web"  = var.enable_exastro_web_autostop
+    "exastro-api"  = var.enable_exastro_api_autostop
+    gitlab         = var.enable_gitlab_autostop
+    pgadmin        = var.enable_pgadmin_autostop
+    phpmyadmin     = var.enable_phpmyadmin_autostop
+  }
+  control_site_index = templatefile("${path.module}/templates/control-index.html.tftpl", {
+    api_base_url                   = local.control_api_base_url_effective,
+    keycloak_base_url              = local.keycloak_base_url_effective,
+    keycloak_realm                 = local.control_site_keycloak_realm,
+    keycloak_client_id             = local.service_control_keycloak_client_id_effective,
+    service_control_autostop_flags = jsonencode(local.service_control_autostop_flags)
+  })
+  wildcard_cf_cert_name = "${local.name_prefix}-cf-wildcard-cert"
+  control_site_aliases  = [local.control_site_domain]
 }
 
 resource "aws_acm_certificate" "cloudfront_wildcard" {
@@ -103,11 +137,26 @@ resource "aws_s3_bucket_versioning" "control_site" {
 }
 
 resource "aws_s3_object" "control_index" {
-  count        = local.control_site_enabled ? 1 : 0
-  bucket       = aws_s3_bucket.control_site[0].id
-  key          = "index.html"
-  content      = local.control_site_index
-  content_type = "text/html"
+  count         = local.control_site_enabled ? 1 : 0
+  bucket        = aws_s3_bucket.control_site[0].id
+  key           = "index.html"
+  content       = local.control_site_index
+  content_type  = "text/html"
+  cache_control = "no-store, no-cache, must-revalidate"
+
+  depends_on = [
+    aws_s3_bucket_public_access_block.control_site,
+    aws_s3_bucket_ownership_controls.control_site
+  ]
+}
+
+resource "aws_s3_object" "control_favicon" {
+  count         = local.control_site_enabled ? 1 : 0
+  bucket        = aws_s3_bucket.control_site[0].id
+  key           = "favicon.ico"
+  source        = "${path.module}/templates/favicon.ico"
+  content_type  = "image/x-icon"
+  cache_control = "public, max-age=86400"
 
   depends_on = [
     aws_s3_bucket_public_access_block.control_site,
@@ -129,7 +178,7 @@ resource "aws_cloudfront_distribution" "control_site" {
 
   enabled             = true
   default_root_object = "index.html"
-  aliases             = [local.control_site_domain]
+  aliases             = local.control_site_aliases
 
   origin {
     domain_name              = aws_s3_bucket.control_site[0].bucket_regional_domain_name
@@ -150,6 +199,7 @@ resource "aws_cloudfront_distribution" "control_site" {
         forward = "none"
       }
     }
+
   }
 
   restrictions {

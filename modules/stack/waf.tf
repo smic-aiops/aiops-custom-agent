@@ -294,6 +294,46 @@ resource "aws_wafv2_web_acl" "alb" {
   }
 
   rule {
+    name     = "count-jp-sulu"
+    priority = 28
+
+    action {
+      count {}
+    }
+
+    statement {
+      and_statement {
+        statement {
+          geo_match_statement {
+            country_codes = var.waf_geo_country_codes
+          }
+        }
+        statement {
+          byte_match_statement {
+            positional_constraint = "EXACTLY"
+            search_string         = local.sulu_host
+            field_to_match {
+              single_header {
+                name = "host"
+              }
+            }
+            text_transformation {
+              priority = 0
+              type     = "LOWERCASE"
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name_prefix}-count-jp-sulu"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  rule {
     name     = "count-jp-keycloak"
     priority = 30
 

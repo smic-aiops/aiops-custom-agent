@@ -1,6 +1,12 @@
 locals {
-  ecs_min_capacity = 0
-  ecs_max_capacity = 1
+  ecs_min_capacity                     = 0
+  ecs_max_capacity                     = 1
+  service_control_alarm_period_seconds = 300
+  service_control_alarm_period_minutes = local.service_control_alarm_period_seconds / 60
+  service_control_idle_minutes = {
+    for svc, schedule in local.service_control_schedule_map :
+    svc => lookup(schedule, "idle_minutes", 10)
+  }
 }
 
 resource "aws_appautoscaling_target" "exastro_web" {
@@ -89,6 +95,16 @@ resource "aws_appautoscaling_target" "keycloak" {
   max_capacity       = local.ecs_max_capacity
   min_capacity       = local.ecs_min_capacity
   resource_id        = "service/${aws_ecs_cluster.this[0].name}/${aws_ecs_service.keycloak[0].name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_target" "sulu" {
+  count = var.create_ecs && var.create_sulu && var.enable_sulu_autostop ? 1 : 0
+
+  max_capacity       = local.ecs_max_capacity
+  min_capacity       = local.ecs_min_capacity
+  resource_id        = "service/${aws_ecs_cluster.this[0].name}/${aws_ecs_service.sulu[0].name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 }
@@ -282,6 +298,27 @@ resource "aws_appautoscaling_policy" "keycloak_idle_scale_to_zero" {
   }
 }
 
+resource "aws_appautoscaling_policy" "sulu_idle_scale_to_zero" {
+  count = var.create_ecs && var.create_sulu && var.enable_sulu_autostop ? 1 : 0
+
+  name               = "${local.name_prefix}-sulu-idle-scale-to-zero"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.sulu[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.sulu[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.sulu[0].service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ExactCapacity"
+    cooldown                = 60
+    metric_aggregation_type = "Average"
+
+    step_adjustment {
+      metric_interval_lower_bound = 0
+      scaling_adjustment          = 0
+    }
+  }
+}
+
 resource "aws_appautoscaling_target" "growi" {
   count = var.create_ecs && var.create_growi && var.enable_growi_autostop ? 1 : 0
 
@@ -378,16 +415,28 @@ resource "aws_appautoscaling_policy" "orangehrm_idle_scale_to_zero" {
 resource "aws_cloudwatch_metric_alarm" "exastro_web_idle_10m" {
   count = var.create_ecs && var.create_exastro_web_server && var.enable_exastro_web_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-exastro-web-idle-10m"
+  alarm_name          = "${local.name_prefix}-exastro-web-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale exastro web service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "exastro-web",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale exastro-web service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -401,16 +450,28 @@ resource "aws_cloudwatch_metric_alarm" "exastro_web_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "exastro_api_idle_10m" {
   count = var.create_ecs && var.create_exastro_api_admin && var.enable_exastro_api_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-exastro-api-idle-10m"
+  alarm_name          = "${local.name_prefix}-exastro-api-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale exastro api service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "exastro-api",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale exastro-api service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -424,16 +485,28 @@ resource "aws_cloudwatch_metric_alarm" "exastro_api_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "n8n_idle_10m" {
   count = var.create_ecs && var.create_n8n && var.enable_n8n_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-n8n-idle-10m"
+  alarm_name          = "${local.name_prefix}-n8n-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 2 x 5 minutes = 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale n8n service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "n8n",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale n8n service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -447,16 +520,28 @@ resource "aws_cloudwatch_metric_alarm" "n8n_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "pgadmin_idle_10m" {
   count = var.create_ecs && var.create_pgadmin && var.enable_pgadmin_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-pgadmin-idle-10m"
+  alarm_name          = "${local.name_prefix}-pgadmin-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale pgadmin service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "pgadmin",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale pgadmin service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -470,16 +555,28 @@ resource "aws_cloudwatch_metric_alarm" "pgadmin_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "phpmyadmin_idle_10m" {
   count = var.create_ecs && var.create_phpmyadmin && var.enable_phpmyadmin_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-phpmyadmin-idle-10m"
+  alarm_name          = "${local.name_prefix}-phpmyadmin-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale phpMyAdmin service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "phpmyadmin",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale phpmyadmin service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -493,16 +590,28 @@ resource "aws_cloudwatch_metric_alarm" "phpmyadmin_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "odoo_idle_10m" {
   count = var.create_ecs && var.create_odoo && var.enable_odoo_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-odoo-idle-10m"
+  alarm_name          = "${local.name_prefix}-odoo-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale odoo service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "odoo",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale odoo service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -516,16 +625,28 @@ resource "aws_cloudwatch_metric_alarm" "odoo_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "gitlab_idle_10m" {
   count = var.create_ecs && var.create_gitlab && var.enable_gitlab_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-gitlab-idle-10m"
+  alarm_name          = "${local.name_prefix}-gitlab-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale gitlab service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "gitlab",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale gitlab service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -539,16 +660,28 @@ resource "aws_cloudwatch_metric_alarm" "gitlab_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "zulip_idle_10m" {
   count = var.create_ecs && var.create_zulip && var.enable_zulip_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-zulip-idle-10m"
+  alarm_name          = "${local.name_prefix}-zulip-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale zulip service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "zulip",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale zulip service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -562,16 +695,28 @@ resource "aws_cloudwatch_metric_alarm" "zulip_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "keycloak_idle_10m" {
   count = var.create_ecs && var.create_keycloak && var.enable_keycloak_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-keycloak-idle-10m"
+  alarm_name          = "${local.name_prefix}-keycloak-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale keycloak service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "keycloak",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale keycloak service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -585,16 +730,28 @@ resource "aws_cloudwatch_metric_alarm" "keycloak_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "growi_idle_10m" {
   count = var.create_ecs && var.create_growi && var.enable_growi_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-growi-idle-10m"
+  alarm_name          = "${local.name_prefix}-growi-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale growi service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "growi",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale growi service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -608,16 +765,28 @@ resource "aws_cloudwatch_metric_alarm" "growi_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "cmdbuild_r2u_idle_10m" {
   count = var.create_ecs && var.create_cmdbuild_r2u && var.enable_cmdbuild_r2u_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-cmdbuild-r2u-idle-10m"
+  alarm_name          = "${local.name_prefix}-cmdbuild-r2u-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale cmdbuild-r2u service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "cmdbuild-r2u",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale cmdbuild-r2u service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -631,16 +800,28 @@ resource "aws_cloudwatch_metric_alarm" "cmdbuild_r2u_idle_10m" {
 resource "aws_cloudwatch_metric_alarm" "orangehrm_idle_10m" {
   count = var.create_ecs && var.create_orangehrm && var.enable_orangehrm_autostop ? 1 : 0
 
-  alarm_name          = "${local.name_prefix}-orangehrm-idle-10m"
+  alarm_name          = "${local.name_prefix}-orangehrm-idle"
   comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 2 # 10 minutes
-  metric_name         = "CountedRequests"
-  namespace           = "AWS/WAFV2"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Scale orangehrm service to 0 when no Japan ALB requests for 10 minutes"
-  treat_missing_data  = "notBreaching"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "orangehrm",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale orangehrm service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -649,4 +830,39 @@ resource "aws_cloudwatch_metric_alarm" "orangehrm_idle_10m" {
   }
 
   alarm_actions = [aws_appautoscaling_policy.orangehrm_idle_scale_to_zero[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "sulu_idle_10m" {
+  count = var.create_ecs && var.create_sulu && var.enable_sulu_autostop ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-sulu-idle"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods = max(
+    1,
+    ceil(
+      lookup(
+        local.service_control_idle_minutes,
+        "sulu",
+        10
+      ) / local.service_control_alarm_period_minutes
+    )
+  )
+  lifecycle {
+    ignore_changes = [evaluation_periods]
+  }
+  metric_name        = "CountedRequests"
+  namespace          = "AWS/WAFV2"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 0
+  alarm_description  = "Scale sulu service to 0 when no Japan ALB requests are counted for the configured idle window"
+  treat_missing_data = "notBreaching"
+
+  dimensions = {
+    WebACL = aws_wafv2_web_acl.alb[0].name
+    Rule   = "count-jp-sulu"
+    Region = var.region
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.sulu_idle_scale_to_zero[0].arn]
 }

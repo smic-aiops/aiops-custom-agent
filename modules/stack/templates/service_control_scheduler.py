@@ -28,7 +28,7 @@ SERVICE_CONTROL_AUTOSTOP_ALARM_METRIC_NAME = os.environ.get("SERVICE_CONTROL_AUT
 SERVICE_CONTROL_AUTOSTOP_ALARM_STATISTIC = os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_STATISTIC", "Sum")
 SERVICE_CONTROL_AUTOSTOP_ALARM_COMPARISON_OPERATOR = os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_COMPARISON_OPERATOR", "LessThanOrEqualToThreshold")
 SERVICE_CONTROL_AUTOSTOP_ALARM_THRESHOLD = float(os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_THRESHOLD", "0"))
-SERVICE_CONTROL_AUTOSTOP_ALARM_TREAT_MISSING_DATA = os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_TREAT_MISSING_DATA", "notBreaching")
+SERVICE_CONTROL_AUTOSTOP_ALARM_TREAT_MISSING_DATA = os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_TREAT_MISSING_DATA", "breaching")
 HOLIDAY_CACHE = {}
 
 
@@ -342,7 +342,9 @@ def handler(event, context):
         schedule = _ensure_schedule(service_key)
         active = _should_be_active(schedule, local_now)
         _update_idle_alarm(service_key, schedule, active)
-        desired = START_DESIRED if active else 0
+        if not active:
+            continue
+        desired = START_DESIRED
         current = _describe_current_desired(service_arn)
         if current is None:
             continue

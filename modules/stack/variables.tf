@@ -604,9 +604,9 @@ variable "enable_cmdbuild_r2u" {
 }
 
 variable "enable_n8n_autostop" {
-  description = "Whether to enable n8n idle auto-stop (AppAutoScaling + CloudWatch alarm); service_control による自動起動・停止スケジュールが有効な時間帯はスケジュールが優先になるため false にしてください。"
+  description = "Whether to enable n8n idle auto-stop (AppAutoScaling + CloudWatch alarm); service_control のスケジュール中はアラームを無効化するため競合しません。"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_exastro_web_autostop" {
@@ -630,7 +630,7 @@ variable "n8n_desired_count" {
 variable "enable_zulip_autostop" {
   description = "Whether to enable Zulip idle auto-stop (AppAutoScaling + CloudWatch alarm)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_sulu_autostop" {
@@ -690,7 +690,7 @@ variable "enable_phpmyadmin_autostop" {
 variable "enable_keycloak_autostop" {
   description = "Whether to enable Keycloak idle auto-stop (AppAutoScaling + CloudWatch alarm)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_odoo_autostop" {

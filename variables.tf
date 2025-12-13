@@ -147,7 +147,7 @@ variable "keycloak_admin_password" {
 variable "enable_keycloak_autostop" {
   description = "Whether to enable Keycloak idle auto-stop (AppAutoScaling + CloudWatch alarm)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "keycloak_desired_count" {
@@ -412,9 +412,9 @@ variable "create_n8n" {
 }
 
 variable "enable_n8n_autostop" {
-  description = "Whether to enable n8n idle auto-stop (AppAutoScaling + CloudWatch alarm); disable it while service_control による自動起動・停止スケジュールが有効な時間帯は、スケジュールがライフサイクルを管理するため両者を競合させないよう false にします。"
+  description = "Whether to enable n8n idle auto-stop (AppAutoScaling + CloudWatch alarm); service_control のスケジュール中はアラームを無効化するため競合しません。"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "n8n_desired_count" {
@@ -472,7 +472,7 @@ variable "create_zulip" {
 variable "enable_zulip_autostop" {
   description = "Whether to enable Zulip idle auto-stop (AppAutoScaling + CloudWatch alarm)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_zulip_keycloak" {

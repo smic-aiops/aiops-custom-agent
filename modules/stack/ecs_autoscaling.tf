@@ -436,7 +436,7 @@ resource "aws_cloudwatch_metric_alarm" "exastro_web_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale exastro-web service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -471,7 +471,7 @@ resource "aws_cloudwatch_metric_alarm" "exastro_api_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale exastro-api service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -506,7 +506,7 @@ resource "aws_cloudwatch_metric_alarm" "n8n_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale n8n service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -541,7 +541,7 @@ resource "aws_cloudwatch_metric_alarm" "pgadmin_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale pgadmin service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -576,7 +576,7 @@ resource "aws_cloudwatch_metric_alarm" "phpmyadmin_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale phpmyadmin service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -611,7 +611,7 @@ resource "aws_cloudwatch_metric_alarm" "odoo_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale odoo service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -646,7 +646,7 @@ resource "aws_cloudwatch_metric_alarm" "gitlab_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale gitlab service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -681,7 +681,7 @@ resource "aws_cloudwatch_metric_alarm" "zulip_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale zulip service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -716,7 +716,7 @@ resource "aws_cloudwatch_metric_alarm" "keycloak_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale keycloak service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -751,7 +751,7 @@ resource "aws_cloudwatch_metric_alarm" "growi_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale growi service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -786,7 +786,7 @@ resource "aws_cloudwatch_metric_alarm" "cmdbuild_r2u_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale cmdbuild-r2u service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -821,7 +821,7 @@ resource "aws_cloudwatch_metric_alarm" "orangehrm_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale orangehrm service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name
@@ -856,7 +856,7 @@ resource "aws_cloudwatch_metric_alarm" "sulu_idle_10m" {
   statistic          = "Sum"
   threshold          = 0
   alarm_description  = "Scale sulu service to 0 when no Japan ALB requests are counted for the configured idle window"
-  treat_missing_data = "notBreaching"
+  treat_missing_data = "breaching"
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.alb[0].name

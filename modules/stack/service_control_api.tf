@@ -368,6 +368,7 @@ resource "aws_lambda_function" "service_control_scheduler" {
         SERVICE_CONTROL_AUTOSTOP_ALARM_PERIOD_SECONDS = tostring(local.service_control_alarm_period_seconds)
         SERVICE_CONTROL_AUTOSTOP_ALARM_REGION         = var.region
         SERVICE_CONTROL_AUTOSTOP_WAF_NAME             = try(aws_wafv2_web_acl.alb[0].name, "")
+        SERVICE_CONTROL_AUTOSTOP_ALARM_TREAT_MISSING_DATA = "breaching"
       },
       var.create_ssm_parameters ? {
         SERVICE_ARNS_SSM_PARAMETER                    = aws_ssm_parameter.service_control_service_arns[0].name

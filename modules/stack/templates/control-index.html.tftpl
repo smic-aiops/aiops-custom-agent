@@ -38,6 +38,7 @@
     .ops-status--starting { background: #fff4e5; color: #8a4b00; }
     .ops-status--stopped { background: #f5f5f5; color: #444; }
     .schedule { margin-top: 0.8rem; padding-top: 0.75rem; border-top: 1px dashed #ddd; display: flex; flex-direction: column; gap: 0.4rem; }
+    .schedule-inputs.hidden { display: none; }
     .auto-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.95rem; font-weight: 600; }
     .schedule-inputs { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.9rem; }
     .schedule-inputs label { display: flex; align-items: center; gap: 0.2rem; }
@@ -45,11 +46,27 @@
     .schedule-rows { display: flex; flex-direction: column; gap: 0.35rem; width: 100%; }
     .schedule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     .schedule-row strong { min-width: 4.5rem; display: inline-block; }
-    .idle-field.hidden { display: none; }
     .schedule-status { font-size: 0.85rem; color: #444; }
     .auth-status { font-size: 0.95rem; color: #0f5132; background: #e4f0e5; padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid #cfe3ce; margin-bottom: 1rem; }
     .timezone-note { font-size: 0.9rem; color: #555; margin-top: 0.25rem; }
     .schedule-hint { font-size: 0.8rem; color: #666; margin-top: 0.35rem; }
+    .credentials {
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      border-radius: 6px;
+      border: 1px solid #d3d7e1;
+      background: #f6f7fb;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+    .credentials strong {
+      display: block;
+      font-size: 0.95rem;
+      margin-bottom: 0.35rem;
+    }
+    .credentials div {
+      margin-top: 0.25rem;
+    }
     .credential-card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 1rem; }
     .credential-card p { margin: 0.35rem 0; }
     .credential-card .credential-label { font-weight: 600; color: #222; }
@@ -63,12 +80,6 @@
 
   <div id="auth-status" class="auth-status">認証なしで利用しています</div>
   <div id="login-container"></div>
-  <div id="pgadmin-credentials" class="credential-card hidden">
-    <h2>pgAdmin 用 DB 資格情報</h2>
-    <p><span class="credential-label">ユーザー名:</span> <span data-pgadmin-credential="username">-</span></p>
-    <p><span class="credential-label">パスワード:</span> <span data-pgadmin-credential="password">-</span></p>
-  </div>
-
   <div class="grid" id="cards"></div>
 
   <script>
@@ -167,9 +178,6 @@
       { title: 'Technical Management（技術管理）', items: ['exastro-web', 'exastro-api', 'gitlab', 'pgadmin', 'phpmyadmin'] },
     ];
     const cardsEl = document.getElementById('cards');
-    const pgadminCredentialCard = document.getElementById('pgadmin-credentials');
-    const pgadminCredentialUsernameEl = pgadminCredentialCard ? pgadminCredentialCard.querySelector('[data-pgadmin-credential="username"]') : null;
-    const pgadminCredentialPasswordEl = pgadminCredentialCard ? pgadminCredentialCard.querySelector('[data-pgadmin-credential="password"]') : null;
     const scheduleState = new Map();
     const rootDomain = (() => {
       const host = window.location.hostname;
@@ -177,6 +185,8 @@
       if (parts.length >= 3) return parts.slice(1).join('.');
       return host;
     })();
+    const PGADMIN_ADMIN_USERNAME = "${pgadmin_admin_username}" || 'admin@pgadmin.' + rootDomain;
+    const PGADMIN_PASSWORD_SSM_PARAMETER = "${pgadmin_password_ssm_parameter}";
     const authStatusEl = document.getElementById('auth-status');
     const loginContainer = document.getElementById('login-container');
     let accessToken = null;
@@ -457,6 +467,70 @@
       el.textContent = `TG: healthy=$${sum.healthy || 0}, unhealthy=$${sum.unhealthy || 0}, total=$${sum.total || 0}`;
     }
 
+    function renderPhpMyAdminCredentials(service, data) {
+      if (!cardsEl) return;
+      const container = cardsEl.querySelector(`[data-credentials="$${service}"]`);
+      if (!container) return;
+      const usernameEl = container.querySelector('[data-credential-username]');
+      const passwordEl = container.querySelector('[data-credential-password]');
+      if (!usernameEl || !passwordEl) return;
+      if (!data) {
+        usernameEl.textContent = '取得失敗';
+        passwordEl.textContent = '取得失敗';
+        return;
+      }
+      usernameEl.textContent = data.username ?? '未設定';
+      passwordEl.textContent = data.password ?? '未設定';
+    }
+
+    function renderKeycloakCredentials(data) {
+      if (!cardsEl) return;
+      const container = cardsEl.querySelector('[data-credentials-keycloak]');
+      if (!container) return;
+      const usernameEl = container.querySelector('[data-keycloak-credential="username"]');
+      const passwordEl = container.querySelector('[data-keycloak-credential="password"]');
+      if (!usernameEl || !passwordEl) return;
+      if (!data) {
+        usernameEl.textContent = '取得失敗';
+        passwordEl.textContent = '取得失敗';
+        return;
+      }
+      usernameEl.textContent = data.username ?? '未設定';
+      passwordEl.textContent = data.password ?? '未設定';
+    }
+
+    function renderOdooCredentials(data) {
+      if (!cardsEl) return;
+      const container = cardsEl.querySelector('[data-credentials-odoo]');
+      if (!container) return;
+      const usernameEl = container.querySelector('[data-odoo-credential="username"]');
+      const passwordEl = container.querySelector('[data-odoo-credential="password"]');
+      if (!usernameEl || !passwordEl) return;
+      if (!data) {
+        usernameEl.textContent = '取得失敗';
+        passwordEl.textContent = '取得失敗';
+        return;
+      }
+      usernameEl.textContent = data.username ?? '未設定';
+      passwordEl.textContent = data.password ?? '未設定';
+    }
+
+    function renderOrangehrmCredentials(data) {
+      if (!cardsEl) return;
+      const container = cardsEl.querySelector('[data-credentials-orangehrm]');
+      if (!container) return;
+      const usernameEl = container.querySelector('[data-orangehrm-credential="username"]');
+      const passwordEl = container.querySelector('[data-orangehrm-credential="password"]');
+      if (!usernameEl || !passwordEl) return;
+      if (!data) {
+        usernameEl.textContent = '取得失敗';
+        passwordEl.textContent = '取得失敗';
+        return;
+      }
+      usernameEl.textContent = data.username ?? '未設定';
+      passwordEl.textContent = data.password ?? '未設定';
+    }
+
     function updateOpsStatusUI(service, label, variant = 'pending') {
       if (!cardsEl) return;
       const el = cardsEl.querySelector('[data-ops-status="' + service + '"]');
@@ -530,6 +604,7 @@
         const idleSupported = Boolean(serviceAutoStopCapabilities[service]);
         idleInput.disabled = locked || !idleSupported;
       }
+      setScheduleInputsVisibility(service, enabled);
       updateIdleField(service);
       if (statusEl) {
         if (locked) {
@@ -558,6 +633,50 @@
       } catch {
         const statusEl = cardsEl.querySelector('[data-schedule-status="' + service + '"]');
         if (statusEl) statusEl.textContent = 'スケジュール情報を取得できません';
+      }
+    }
+
+    async function fetchPhpMyAdminCredentials() {
+      if (!API_BASE || !apiEnabledServices.has('phpmyadmin')) return;
+      try {
+        const credentials = await callApi('phpmyadmin', '/db-credentials', 'GET');
+        renderPhpMyAdminCredentials('phpmyadmin', credentials);
+      } catch (err) {
+        console.warn('phpMyAdmin credentials fetch failed', err);
+        renderPhpMyAdminCredentials('phpmyadmin', null);
+      }
+    }
+
+    async function fetchKeycloakCredentials() {
+      if (!API_BASE || !apiEnabledServices.has('keycloak')) return;
+      try {
+        const credentials = await callApi('keycloak', '/keycloak-admin-credentials', 'GET');
+        renderKeycloakCredentials(credentials);
+      } catch (err) {
+        console.warn('Keycloak credentials fetch failed', err);
+        renderKeycloakCredentials(null);
+      }
+    }
+
+    async function fetchOdooCredentials() {
+      if (!API_BASE || !apiEnabledServices.has('odoo')) return;
+      try {
+        const credentials = await callApi('odoo', '/odoo-admin-credentials', 'GET');
+        renderOdooCredentials(credentials);
+      } catch (err) {
+        console.warn('Odoo credentials fetch failed', err);
+        renderOdooCredentials(null);
+      }
+    }
+
+    async function fetchOrangehrmCredentials() {
+      if (!API_BASE || !apiEnabledServices.has('orangehrm')) return;
+      try {
+        const credentials = await callApi('orangehrm', '/orangehrm-admin-credentials', 'GET');
+        renderOrangehrmCredentials(credentials);
+      } catch (err) {
+        console.warn('OrangeHRM credentials fetch failed', err);
+        renderOrangehrmCredentials(null);
       }
     }
 
@@ -630,7 +749,7 @@
                       <input type="checkbox" data-action="toggle-auto" data-service="$${s.key}">
                       自動起動・停止
                     </label>
-                    <div class="schedule-inputs">
+                    <div class="schedule-inputs" data-schedule-inputs="$${s.key}">
                       <div class="schedule-rows">
                         <div class="schedule-row">
                           <strong>平日</strong>
@@ -651,12 +770,44 @@
                           </label>
                         </div>
                       </div>
-                      <label class="idle-field">アイドル
-                        <input type="number" min="1" data-action="set-idle" data-service="$${s.key}" value="${DEFAULT_IDLE_MINUTES}">分
-                      </label>
                     </div>
                     <div class="schedule-status" data-schedule-status="$${s.key}">スケジュール情報を読み込み中...</div>
                   </div>
+                  $${s.key === 'keycloak' ? `
+                  <div class="credentials credential-card" data-credentials-keycloak>
+                    <strong>Keycloak 管理アカウント</strong>
+                    <div>ユーザー名：<span data-keycloak-credential="username">取得中...</span></div>
+                    <div>パスワード：<span data-keycloak-credential="password">取得中...</span></div>
+                  </div>
+                  ` : ''}
+                  $${s.key === 'odoo' ? `
+                  <div class="credentials credential-card" data-credentials-odoo>
+                    <strong>Odoo 管理者認証情報</strong>
+                    <div>ユーザー名：<span data-odoo-credential="username">admin</span></div>
+                    <div>パスワード：<span data-odoo-credential="password">取得中...</span></div>
+                  </div>
+                  ` : ''}
+                  $${s.key === 'orangehrm' ? `
+                  <div class="credentials credential-card" data-credentials-orangehrm>
+                    <strong>OrangeHRM 管理者認証情報</strong>
+                    <div>ユーザー名：<span data-orangehrm-credential="username">取得中...</span></div>
+                    <div>パスワード：<span data-orangehrm-credential="password">取得中...</span></div>
+                  </div>
+                  ` : ''}
+                  $${s.key === 'pgadmin' ? `
+                  <div class="credentials credential-card" data-pgadmin-credentials>
+                    <strong>pgAdmin データベース認証情報</strong>
+                    <div>ユーザー名：<span data-pgadmin-credential="username">取得中...</span></div>
+                    <div>パスワード：<span data-pgadmin-credential="password">取得中...</span></div>
+                  </div>
+                  ` : ''}
+                  $${s.key === 'phpmyadmin' ? `
+                  <div class="credentials" data-credentials="$${s.key}">
+                    <strong>phpMyAdmin データベース認証情報</strong>
+                    <div>ユーザー名：<span data-credential-username>取得中...</span></div>
+                    <div>パスワード：<span data-credential-password>取得中...</span></div>
+                  </div>
+                  ` : ''}
                   <div class="health" data-health="$${s.key}">TG: -</div>
                   </div>
                 `;
@@ -665,6 +816,7 @@
           </div>
         `).join('');
         servicesWithStatus.forEach(s => {
+          setScheduleInputsVisibility(s.key, false);
           updateIdleField(s.key);
           if (!s.apiEnabled) {
             markServiceApiUnavailable(s.key);
@@ -697,6 +849,13 @@
       const healthEl = cardsEl.querySelector(`[data-health="$${service}"]`);
       if (healthEl) healthEl.textContent = 'TG: API 未対応';
       updateOpsStatusUI(service, '未実装', 'pending');
+    }
+
+    function setScheduleInputsVisibility(service, visible) {
+      if (!cardsEl) return;
+      const container = cardsEl.querySelector('[data-schedule-inputs="' + service + '"]');
+      if (!container) return;
+      container.classList.toggle('hidden', !visible);
     }
 
     function bindEvents() {
@@ -753,40 +912,35 @@
           log(`サービス $${svc.key} の更新に失敗: $${msg}`);
         }
       }
+      if (apiEnabledServices.has('keycloak')) {
+        await fetchKeycloakCredentials();
+      }
+      if (apiEnabledServices.has('odoo')) {
+        await fetchOdooCredentials();
+      }
+      if (apiEnabledServices.has('orangehrm')) {
+        await fetchOrangehrmCredentials();
+      }
+      if (apiEnabledServices.has('phpmyadmin')) {
+        await fetchPhpMyAdminCredentials();
+      }
       loadPgadminCredentials();
     }
 
-    function setPgadminCredentialVisibility(visible) {
-      if (!pgadminCredentialCard) return;
-      pgadminCredentialCard.classList.toggle('hidden', !visible);
+    function renderPgadminCredentialCard() {
+      if (!cardsEl) return;
+      const container = cardsEl.querySelector('[data-pgadmin-credentials]');
+      if (!container) return;
+      const usernameEl = container.querySelector('[data-pgadmin-credential="username"]');
+      const passwordEl = container.querySelector('[data-pgadmin-credential="password"]');
+      if (!usernameEl || !passwordEl) return;
+      usernameEl.textContent = PGADMIN_ADMIN_USERNAME || '非公開';
+      passwordEl.textContent = PGADMIN_PASSWORD_SSM_PARAMETER || '非公開';
+      container.classList.remove('hidden');
     }
 
-    function setPgadminCredentialValues(username, password) {
-      if (pgadminCredentialUsernameEl) {
-        pgadminCredentialUsernameEl.textContent = username || '非公開';
-      }
-      if (pgadminCredentialPasswordEl) {
-        pgadminCredentialPasswordEl.textContent = password || '非公開';
-      }
-    }
-
-    async function loadPgadminCredentials() {
-      if (!pgadminCredentialCard || !apiEnabledServices.has('pgadmin') || !API_BASE) {
-        setPgadminCredentialVisibility(false);
-        return;
-      }
-      try {
-        const data = await callApi('pgadmin', '/db-credentials', 'GET');
-        if (data && (data.username || data.password)) {
-          setPgadminCredentialValues(data.username, data.password);
-          setPgadminCredentialVisibility(true);
-        } else {
-          setPgadminCredentialVisibility(false);
-        }
-      } catch (err) {
-        console.warn('pgAdmin credentials fetch failed', err);
-        setPgadminCredentialVisibility(false);
-      }
+    function loadPgadminCredentials() {
+      renderPgadminCredentialCard();
     }
     if (!API_BASE) {
       renderCards();

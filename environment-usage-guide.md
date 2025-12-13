@@ -43,11 +43,11 @@
 | 区分       | サービス         | URL                                                                 | 認証       |
 | ---------- | ---------------- | ------------------------------------------------------------------- | ---------- |
 | 認証基盤     | Keycloak         | `https://keycloak.smic-aiops.jp/`                                   | Keycloak   |
-| 基盤管理     | コントロールサイト      | `https://control.smic-aiops.jp/`                                    | Keycloak   |
+| 基盤管理     | コントロールサイト      | `https://control.smic-aiops.jp/`                                    | Keycloak(JWT Auth)   |
 | メインサービス（ダミー） | Sulu             | `https://sulu.smic-aiops.jp/`                                       | Keycloak   |
 | PoCコア    | n8n              | `https://n8n.smic-aiops.jp/`                                        | ローカル     |
 | PoCコア    | Zulip            | `https://zulip.smic-aiops.jp/`                                      | Keycloak   |
-| DB確認     | phpMyAdmin       | `https://phpmyadmin.smic-aiops.jp/`                                 | ALB OIDC   |
+| DB確認     | phpMyAdmin       | `https://phpmyadmin.smic-aiops.jp/`                                 | Keycloak(ALB OIDC)   |
 | DB確認     | pgAdmin          | `https://pgadmin.smic-aiops.jp/`                                    | Keycloak   |
 
 ※ 準備中/追加予定

@@ -47,17 +47,24 @@ locals {
     idle_minutes  = 60
   }
   control_site_index = templatefile("${path.module}/templates/control-index.html.tftpl", {
-    api_base_url                   = local.control_api_base_url_effective,
-    keycloak_base_url              = local.keycloak_base_url_effective,
-    keycloak_realm                 = local.control_site_keycloak_realm,
-    keycloak_client_id             = local.service_control_keycloak_client_id_effective,
-    service_control_autostop_flags = jsonencode(local.service_control_autostop_flags),
-    service_control_enabled_svcs   = jsonencode(local.service_control_enabled_services),
-    DEFAULT_WEEKDAY_START_JST      = local.control_site_schedule_defaults.weekday_start,
-    DEFAULT_WEEKDAY_STOP_JST       = local.control_site_schedule_defaults.weekday_stop,
-    DEFAULT_HOLIDAY_START_JST      = local.control_site_schedule_defaults.holiday_start,
-    DEFAULT_HOLIDAY_STOP_JST       = local.control_site_schedule_defaults.holiday_stop,
-    DEFAULT_IDLE_MINUTES           = local.control_site_schedule_defaults.idle_minutes
+    api_base_url                           = local.control_api_base_url_effective,
+    keycloak_base_url                      = local.keycloak_base_url_effective,
+    keycloak_realm                         = local.control_site_keycloak_realm,
+    keycloak_client_id                     = local.service_control_keycloak_client_id_effective,
+    keycloak_admin_username_ssm_parameter  = local.keycloak_admin_username_parameter_name,
+    keycloak_admin_password_ssm_parameter  = local.keycloak_admin_password_parameter_name,
+    odoo_admin_password_ssm_parameter      = local.odoo_admin_password_parameter_name,
+    pgadmin_admin_username                 = "admin@${local.hosted_zone_name_input}",
+    pgadmin_password_ssm_parameter         = local.pgadmin_default_password_parameter_name,
+    orangehrm_admin_username_ssm_parameter = local.orangehrm_admin_username_parameter_name,
+    orangehrm_admin_password_ssm_parameter = local.orangehrm_admin_password_parameter_name,
+    service_control_autostop_flags         = jsonencode(local.service_control_autostop_flags),
+    service_control_enabled_svcs           = jsonencode(local.service_control_enabled_services),
+    DEFAULT_WEEKDAY_START_JST              = local.control_site_schedule_defaults.weekday_start,
+    DEFAULT_WEEKDAY_STOP_JST               = local.control_site_schedule_defaults.weekday_stop,
+    DEFAULT_HOLIDAY_START_JST              = local.control_site_schedule_defaults.holiday_start,
+    DEFAULT_HOLIDAY_STOP_JST               = local.control_site_schedule_defaults.holiday_stop,
+    DEFAULT_IDLE_MINUTES                   = local.control_site_schedule_defaults.idle_minutes
   })
   wildcard_cf_cert_name = "${local.name_prefix}-cf-wildcard-cert"
   control_site_aliases  = [local.control_site_domain]

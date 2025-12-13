@@ -18,7 +18,13 @@ SERVICE_CONTROL_SSM_PATH = os.environ.get("SERVICE_CONTROL_SSM_PATH", "")
 KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL", "").rstrip("/")
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "").strip("/")
 KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "")
+KEYCLOAK_ADMIN_USERNAME_PARAMETER = os.environ.get("KEYCLOAK_ADMIN_USERNAME_SSM_PARAMETER")
+KEYCLOAK_ADMIN_PASSWORD_PARAMETER = os.environ.get("KEYCLOAK_ADMIN_PASSWORD_SSM_PARAMETER")
 KEYCLOAK_TOKEN_ENDPOINT = f"{KEYCLOAK_BASE_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+ODOO_ADMIN_USERNAME = os.environ.get("ODOO_ADMIN_USERNAME", "admin")
+ODOO_ADMIN_PASSWORD_PARAMETER = os.environ.get("ODOO_ADMIN_PASSWORD_SSM_PARAMETER")
+ORANGEHRM_ADMIN_USERNAME_PARAMETER = os.environ.get("ORANGEHRM_ADMIN_USERNAME_SSM_PARAMETER")
+ORANGEHRM_ADMIN_PASSWORD_PARAMETER = os.environ.get("ORANGEHRM_ADMIN_PASSWORD_SSM_PARAMETER")
 
 
 def _load_json_config(env_key, ssm_param_env_key, default=None):
@@ -150,23 +156,46 @@ def _describe_tg_health(tg_arn):
         )
     return {"summary": summary, "targets": details}
 
+def _load_ssm_parameter_value(name, label):
+    if not name:
+        return None
+    try:
+        resp = ssm.get_parameter(Name=name, WithDecryption=True)
+        return resp.get("Parameter", {}).get("Value")
+    except Exception as exc:  # pylint: disable=broad-except
+        print({"warning": f"failed to load {label}", "parameter": name, "error": str(exc)})
+        return None
+
+
 def _get_db_credentials():
     username_param = os.environ.get("DB_USERNAME_SSM_PARAMETER")
     password_param = os.environ.get("DB_PASSWORD_SSM_PARAMETER")
-    result = {"username": None, "password": None}
     if not username_param or not password_param:
-        return result
-    try:
-        resp = ssm.get_parameter(Name=username_param, WithDecryption=True)
-        result["username"] = resp.get("Parameter", {}).get("Value")
-    except Exception as exc:  # pylint: disable=broad-except
-        print({"warning": "failed to load db username", "parameter": username_param, "error": str(exc)})
-    try:
-        resp = ssm.get_parameter(Name=password_param, WithDecryption=True)
-        result["password"] = resp.get("Parameter", {}).get("Value")
-    except Exception as exc:  # pylint: disable=broad-except
-        print({"warning": "failed to load db password", "parameter": password_param, "error": str(exc)})
-    return result
+        return {"username": None, "password": None}
+    return {
+        "username": _load_ssm_parameter_value(username_param, "db username"),
+        "password": _load_ssm_parameter_value(password_param, "db password"),
+    }
+
+
+def _get_keycloak_admin_credentials():
+    return {
+        "username": _load_ssm_parameter_value(KEYCLOAK_ADMIN_USERNAME_PARAMETER, "Keycloak admin username"),
+        "password": _load_ssm_parameter_value(KEYCLOAK_ADMIN_PASSWORD_PARAMETER, "Keycloak admin password"),
+    }
+
+def _get_odoo_admin_credentials():
+    return {
+        "username": ODOO_ADMIN_USERNAME,
+        "password": _load_ssm_parameter_value(ODOO_ADMIN_PASSWORD_PARAMETER, "Odoo admin password"),
+    }
+
+
+def _get_orangehrm_admin_credentials():
+    return {
+        "username": _load_ssm_parameter_value(ORANGEHRM_ADMIN_USERNAME_PARAMETER, "OrangeHRM admin username"),
+        "password": _load_ssm_parameter_value(ORANGEHRM_ADMIN_PASSWORD_PARAMETER, "OrangeHRM admin password"),
+    }
 
 
 def _update(service_arn, desired):
@@ -271,6 +300,12 @@ def handler(event, context):
             return _response(status, parsed)
         if route.endswith("/db-credentials") and method == "GET":
             return _response(200, _get_db_credentials())
+        if route.endswith("/keycloak-admin-credentials") and method == "GET":
+            return _response(200, _get_keycloak_admin_credentials())
+        if route.endswith("/odoo-admin-credentials") and method == "GET":
+            return _response(200, _get_odoo_admin_credentials())
+        if route.endswith("/orangehrm-admin-credentials") and method == "GET":
+            return _response(200, _get_orangehrm_admin_credentials())
         service_arn = _get_service_arn(service_key)
         if route.endswith("/status") and method == "GET":
             body = _describe(service_arn)

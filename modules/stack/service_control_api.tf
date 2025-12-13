@@ -118,8 +118,8 @@ locals {
       policy_arn = length(cfg.policy) > 0 ? cfg.policy[0].arn : ""
     }
   }
-  service_control_db_username_parameter_name = coalesce(var.db_username_parameter_name, "/${local.name_prefix}/db/username")
-  service_control_db_password_parameter_name = coalesce(var.db_password_parameter_name, "/${local.name_prefix}/db/password")
+  service_control_mysql_db_username_parameter_name = local.mysql_db_username_parameter_name
+  service_control_mysql_db_password_parameter_name = local.mysql_db_password_parameter_name
 }
 
 data "archive_file" "service_control_lambda" {
@@ -226,8 +226,13 @@ data "aws_iam_policy_document" "service_control_inline" {
       "ssm:GetParameter"
     ]
     resources = [
-      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:${local.service_control_db_username_parameter_name}",
-      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:${local.service_control_db_password_parameter_name}"
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.db_username_parameter_name}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.db_password_parameter_name}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.keycloak_admin_username_parameter_name}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.keycloak_admin_password_parameter_name}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.odoo_admin_password_parameter_name}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.orangehrm_admin_username_parameter_name}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.orangehrm_admin_password_parameter_name}",
     ]
   }
   statement {
@@ -311,14 +316,20 @@ resource "aws_lambda_function" "service_control" {
   environment {
     variables = merge(
       {
-        CLUSTER_ARN               = local.service_control_api_cluster_arn
-        START_DESIRED             = "1"
-        SERVICE_CONTROL_SSM_PATH  = local.service_control_schedule_prefix
-        KEYCLOAK_BASE_URL         = local.keycloak_base_url_effective
-        KEYCLOAK_REALM            = local.control_site_keycloak_realm
-        KEYCLOAK_CLIENT_ID        = local.service_control_keycloak_client_id_effective
-        DB_USERNAME_SSM_PARAMETER = local.service_control_db_username_parameter_name
-        DB_PASSWORD_SSM_PARAMETER = local.service_control_db_password_parameter_name
+        CLUSTER_ARN                            = local.service_control_api_cluster_arn
+        START_DESIRED                          = "1"
+        SERVICE_CONTROL_SSM_PATH               = local.service_control_schedule_prefix
+        KEYCLOAK_BASE_URL                      = local.keycloak_base_url_effective
+        KEYCLOAK_REALM                         = local.control_site_keycloak_realm
+        KEYCLOAK_CLIENT_ID                     = local.service_control_keycloak_client_id_effective
+        KEYCLOAK_ADMIN_USERNAME_SSM_PARAMETER  = local.keycloak_admin_username_parameter_name
+        KEYCLOAK_ADMIN_PASSWORD_SSM_PARAMETER  = local.keycloak_admin_password_parameter_name
+        ODOO_ADMIN_USERNAME                    = "admin"
+        ODOO_ADMIN_PASSWORD_SSM_PARAMETER      = local.odoo_admin_password_parameter_name
+        ORANGEHRM_ADMIN_USERNAME_SSM_PARAMETER = local.orangehrm_admin_username_parameter_name
+        ORANGEHRM_ADMIN_PASSWORD_SSM_PARAMETER = local.orangehrm_admin_password_parameter_name
+        DB_USERNAME_SSM_PARAMETER              = local.db_username_parameter_name
+        DB_PASSWORD_SSM_PARAMETER              = local.db_password_parameter_name
       },
       var.create_ssm_parameters ? {
         SERVICE_ARNS_SSM_PARAMETER      = aws_ssm_parameter.service_control_service_arns[0].name
@@ -472,6 +483,22 @@ resource "aws_apigatewayv2_route" "service_control" {
     "POST /token" = {
       route = "POST /token"
       auth  = false
+    }
+    "GET /db-credentials" = {
+      route = "GET /db-credentials"
+      auth  = true
+    }
+    "GET /odoo-admin-credentials" = {
+      route = "GET /odoo-admin-credentials"
+      auth  = true
+    }
+    "GET /keycloak-admin-credentials" = {
+      route = "GET /keycloak-admin-credentials"
+      auth  = true
+    }
+    "GET /orangehrm-admin-credentials" = {
+      route = "GET /orangehrm-admin-credentials"
+      auth  = true
     }
   } : {}
 

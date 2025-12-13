@@ -40,7 +40,7 @@ orangehrm_oidc_idps_yaml = <<YAML
 keycloak: {oidc_url: https://keycloak.smic-aiops.jp/realms/master, display_name: Keycloak, client_id: orangehrm, secret: J2bjSbgMriQFTf1oVgcrCWmpzsh5DscU, api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo, extra_params: {scope: "openid email profile"}}
 YAML
 
-zulip_oidc_idps_yaml = <<YAML
+zulip_oidc_idps_yaml           = <<YAML
 keycloak: {oidc_url: https://keycloak.smic-aiops.jp/realms/master, display_name: Keycloak, client_id: zulip, secret: G3AswZnXpKImHYL7mSaOj2DrB89vUCJ4, api_url: https://keycloak.smic-aiops.jp/realms/master/protocol/openid-connect/userinfo, extra_params: {scope: "openid email profile"}}
 YAML
 zulip_oidc_full_name_validated = true

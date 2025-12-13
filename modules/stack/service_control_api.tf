@@ -1,9 +1,9 @@
 locals {
-  service_control_api_name       = "${local.name_prefix}-svc-control-api"
-  service_control_lambda_name    = "${local.name_prefix}-svc-control"
-  service_control_lambda_role    = "${local.name_prefix}-svc-control-lambda"
-  service_control_api_stage_name = "$default"
-  service_control_api_log_group  = "/aws/apigw/${local.name_prefix}-svc-control-api"
+  service_control_api_name        = "${local.name_prefix}-svc-control-api"
+  service_control_lambda_name     = "${local.name_prefix}-svc-control"
+  service_control_lambda_role     = "${local.name_prefix}-svc-control-lambda"
+  service_control_api_stage_name  = "$default"
+  service_control_api_log_group   = "/aws/apigw/${local.name_prefix}-svc-control-api"
   service_control_keycloak_issuer = "${local.keycloak_base_url_effective}/realms/${local.control_site_keycloak_realm}"
   service_control_api_service_flags = {
     n8n          = var.create_n8n
@@ -118,6 +118,8 @@ locals {
       policy_arn = length(cfg.policy) > 0 ? cfg.policy[0].arn : ""
     }
   }
+  service_control_db_username_parameter_name = coalesce(var.db_username_parameter_name, "/${local.name_prefix}/db/username")
+  service_control_db_password_parameter_name = coalesce(var.db_password_parameter_name, "/${local.name_prefix}/db/password")
 }
 
 data "archive_file" "service_control_lambda" {
@@ -221,6 +223,15 @@ data "aws_iam_policy_document" "service_control_inline" {
   }
   statement {
     actions = [
+      "ssm:GetParameter"
+    ]
+    resources = [
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:${local.service_control_db_username_parameter_name}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:${local.service_control_db_password_parameter_name}"
+    ]
+  }
+  statement {
+    actions = [
       "cloudwatch:PutMetricAlarm",
       "cloudwatch:DescribeAlarms"
     ]
@@ -287,11 +298,11 @@ resource "aws_ssm_parameter" "service_control_autostop_alarms" {
 resource "aws_lambda_function" "service_control" {
   count = local.service_control_enabled ? 1 : 0
 
-  function_name = local.service_control_lambda_name
-  role          = aws_iam_role.service_control[0].arn
-  handler       = "service_control_lambda.handler"
-  runtime       = "python3.12"
-  timeout       = 10
+  function_name                  = local.service_control_lambda_name
+  role                           = aws_iam_role.service_control[0].arn
+  handler                        = "service_control_lambda.handler"
+  runtime                        = "python3.12"
+  timeout                        = 10
   reserved_concurrent_executions = var.service_control_lambda_reserved_concurrency
 
   filename         = data.archive_file.service_control_lambda.output_path
@@ -300,12 +311,14 @@ resource "aws_lambda_function" "service_control" {
   environment {
     variables = merge(
       {
-        CLUSTER_ARN              = local.service_control_api_cluster_arn
-        START_DESIRED            = "1"
-        SERVICE_CONTROL_SSM_PATH = local.service_control_schedule_prefix
-        KEYCLOAK_BASE_URL        = local.keycloak_base_url_effective
-        KEYCLOAK_REALM           = local.control_site_keycloak_realm
-        KEYCLOAK_CLIENT_ID       = local.service_control_keycloak_client_id_effective
+        CLUSTER_ARN               = local.service_control_api_cluster_arn
+        START_DESIRED             = "1"
+        SERVICE_CONTROL_SSM_PATH  = local.service_control_schedule_prefix
+        KEYCLOAK_BASE_URL         = local.keycloak_base_url_effective
+        KEYCLOAK_REALM            = local.control_site_keycloak_realm
+        KEYCLOAK_CLIENT_ID        = local.service_control_keycloak_client_id_effective
+        DB_USERNAME_SSM_PARAMETER = local.service_control_db_username_parameter_name
+        DB_PASSWORD_SSM_PARAMETER = local.service_control_db_password_parameter_name
       },
       var.create_ssm_parameters ? {
         SERVICE_ARNS_SSM_PARAMETER      = aws_ssm_parameter.service_control_service_arns[0].name
@@ -430,7 +443,7 @@ resource "aws_apigatewayv2_authorizer" "service_control_jwt" {
       local.service_control_keycloak_client_id_effective,
       "account"
     ]
-    issuer   = local.service_control_keycloak_issuer
+    issuer = local.service_control_keycloak_issuer
   }
 }
 

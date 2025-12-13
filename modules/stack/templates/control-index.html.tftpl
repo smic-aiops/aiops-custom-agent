@@ -50,6 +50,10 @@
     .auth-status { font-size: 0.95rem; color: #0f5132; background: #e4f0e5; padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid #cfe3ce; margin-bottom: 1rem; }
     .timezone-note { font-size: 0.9rem; color: #555; margin-top: 0.25rem; }
     .schedule-hint { font-size: 0.8rem; color: #666; margin-top: 0.35rem; }
+    .credential-card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 1rem; }
+    .credential-card p { margin: 0.35rem 0; }
+    .credential-card .credential-label { font-weight: 600; color: #222; }
+    .credential-card.hidden { display: none; }
   </style>
 </head>
 <body>
@@ -59,6 +63,11 @@
 
   <div id="auth-status" class="auth-status">認証なしで利用しています</div>
   <div id="login-container"></div>
+  <div id="pgadmin-credentials" class="credential-card hidden">
+    <h2>pgAdmin 用 DB 資格情報</h2>
+    <p><span class="credential-label">ユーザー名:</span> <span data-pgadmin-credential="username">-</span></p>
+    <p><span class="credential-label">パスワード:</span> <span data-pgadmin-credential="password">-</span></p>
+  </div>
 
   <div class="grid" id="cards"></div>
 
@@ -158,6 +167,9 @@
       { title: 'Technical Management（技術管理）', items: ['exastro-web', 'exastro-api', 'gitlab', 'pgadmin', 'phpmyadmin'] },
     ];
     const cardsEl = document.getElementById('cards');
+    const pgadminCredentialCard = document.getElementById('pgadmin-credentials');
+    const pgadminCredentialUsernameEl = pgadminCredentialCard ? pgadminCredentialCard.querySelector('[data-pgadmin-credential="username"]') : null;
+    const pgadminCredentialPasswordEl = pgadminCredentialCard ? pgadminCredentialCard.querySelector('[data-pgadmin-credential="password"]') : null;
     const scheduleState = new Map();
     const rootDomain = (() => {
       const host = window.location.hostname;
@@ -602,7 +614,7 @@
               const initialOpsStatus = s.apiEnabled ? '確認中' : '未実装';
               const initialOpsVariant = 'pending';
               return `
-                <div class="card">
+        <div class="card">
                   <h2>$${s.name}</h2>
                   <div class="ops-status ops-status--$${initialOpsVariant}" data-ops-status="$${s.key}">運用ステータス：$${initialOpsStatus}</div>
                   <div class="health">$${s.desc || ''}</div>
@@ -646,19 +658,20 @@
                     <div class="schedule-status" data-schedule-status="$${s.key}">スケジュール情報を読み込み中...</div>
                   </div>
                   <div class="health" data-health="$${s.key}">TG: -</div>
-                </div>
-              `;
-            }).join('')}
+                  </div>
+                `;
+              }).join('')}
+            </div>
           </div>
-        </div>
-      `).join('');
-      servicesWithStatus.forEach(s => {
-        updateIdleField(s.key);
-        if (!s.apiEnabled) {
-          markServiceApiUnavailable(s.key);
-        }
-      });
-    }
+        `).join('');
+        servicesWithStatus.forEach(s => {
+          updateIdleField(s.key);
+          if (!s.apiEnabled) {
+            markServiceApiUnavailable(s.key);
+          }
+        });
+        loadPgadminCredentials();
+      }
 
     function updateIdleField(service) {
       const idleInput = cardsEl.querySelector(`[data-action="set-idle"][data-service="$${service}"]`);
@@ -740,8 +753,41 @@
           log(`サービス $${svc.key} の更新に失敗: $${msg}`);
         }
       }
+      loadPgadminCredentials();
     }
 
+    function setPgadminCredentialVisibility(visible) {
+      if (!pgadminCredentialCard) return;
+      pgadminCredentialCard.classList.toggle('hidden', !visible);
+    }
+
+    function setPgadminCredentialValues(username, password) {
+      if (pgadminCredentialUsernameEl) {
+        pgadminCredentialUsernameEl.textContent = username || '非公開';
+      }
+      if (pgadminCredentialPasswordEl) {
+        pgadminCredentialPasswordEl.textContent = password || '非公開';
+      }
+    }
+
+    async function loadPgadminCredentials() {
+      if (!pgadminCredentialCard || !apiEnabledServices.has('pgadmin') || !API_BASE) {
+        setPgadminCredentialVisibility(false);
+        return;
+      }
+      try {
+        const data = await callApi('pgadmin', '/db-credentials', 'GET');
+        if (data && (data.username || data.password)) {
+          setPgadminCredentialValues(data.username, data.password);
+          setPgadminCredentialVisibility(true);
+        } else {
+          setPgadminCredentialVisibility(false);
+        }
+      } catch (err) {
+        console.warn('pgAdmin credentials fetch failed', err);
+        setPgadminCredentialVisibility(false);
+      }
+    }
     if (!API_BASE) {
       renderCards();
       Array.from(cardsEl.querySelectorAll('button')).forEach(btn => btn.disabled = true);

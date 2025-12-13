@@ -150,6 +150,24 @@ def _describe_tg_health(tg_arn):
         )
     return {"summary": summary, "targets": details}
 
+def _get_db_credentials():
+    username_param = os.environ.get("DB_USERNAME_SSM_PARAMETER")
+    password_param = os.environ.get("DB_PASSWORD_SSM_PARAMETER")
+    result = {"username": None, "password": None}
+    if not username_param or not password_param:
+        return result
+    try:
+        resp = ssm.get_parameter(Name=username_param, WithDecryption=True)
+        result["username"] = resp.get("Parameter", {}).get("Value")
+    except Exception as exc:  # pylint: disable=broad-except
+        print({"warning": "failed to load db username", "parameter": username_param, "error": str(exc)})
+    try:
+        resp = ssm.get_parameter(Name=password_param, WithDecryption=True)
+        result["password"] = resp.get("Parameter", {}).get("Value")
+    except Exception as exc:  # pylint: disable=broad-except
+        print({"warning": "failed to load db password", "parameter": password_param, "error": str(exc)})
+    return result
+
 
 def _update(service_arn, desired):
     ecs.update_service(cluster=CLUSTER_ARN, service=service_arn, desiredCount=desired)
@@ -251,6 +269,8 @@ def handler(event, context):
             except json.JSONDecodeError:
                 parsed = {"message": raw_body}
             return _response(status, parsed)
+        if route.endswith("/db-credentials") and method == "GET":
+            return _response(200, _get_db_credentials())
         service_arn = _get_service_arn(service_key)
         if route.endswith("/status") and method == "GET":
             body = _describe(service_arn)

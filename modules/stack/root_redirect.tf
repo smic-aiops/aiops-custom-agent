@@ -86,11 +86,11 @@ resource "aws_s3_bucket_policy" "redirect" {
 }
 
 resource "aws_acm_certificate" "root_redirect" {
-  provider          = aws.us_east_1
-  count             = local.root_redirect_enabled ? 1 : 0
-  domain_name       = local.apex_domain
+  provider                  = aws.us_east_1
+  count                     = local.root_redirect_enabled ? 1 : 0
+  domain_name               = local.apex_domain
   subject_alternative_names = ["www.${local.apex_domain}"]
-  validation_method = "DNS"
+  validation_method         = "DNS"
 
   lifecycle {
     create_before_destroy = true

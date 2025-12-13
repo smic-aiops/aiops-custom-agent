@@ -1,6 +1,6 @@
 locals {
-  root_redirect_enabled = var.root_redirect_target_url != null && trim(var.root_redirect_target_url) != "" && local.hosted_zone_name_input != null && local.hosted_zone_id != null
-  root_redirect_target  = trim(var.root_redirect_target_url)
+  root_redirect_enabled = var.root_redirect_target_url != null && trimspace(var.root_redirect_target_url) != "" && local.hosted_zone_name_input != null && local.hosted_zone_id != null
+  root_redirect_target  = trimspace(var.root_redirect_target_url)
   redirect_domains      = local.root_redirect_enabled ? { root = local.hosted_zone_name_input, www = "www.${local.hosted_zone_name_input}" } : {}
   s3_website_zone_ids = {
     "ap-northeast-1" = "Z2M4EHUR26P7ZW"

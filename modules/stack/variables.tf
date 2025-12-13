@@ -345,6 +345,12 @@ variable "create_hosted_zone" {
   default     = false
 }
 
+variable "root_redirect_target_url" {
+  description = "Target URL for apex/www domain redirects (set null to disable redirect buckets)"
+  type        = string
+  default     = "https://github.com/smic-aiops/aiops-custom-agent/blob/main/environment-usage-guide.md"
+}
+
 variable "control_subdomain" {
   description = "Subdomain for the business-site control UI (e.g., control)"
   type        = string
@@ -466,9 +472,9 @@ variable "sulu_efs_availability_zone" {
 }
 
 variable "sulu_filesystem_path" {
-  description = "Container path for sulu shared/uploads data"
+  description = "Container path where the shared EFS is mounted"
   type        = string
-  default     = "/var/www/html/var/share"
+  default     = "/efs"
 }
 
 variable "pgadmin_efs_availability_zone" {
@@ -871,13 +877,23 @@ variable "enable_service_control" {
   default     = true
 }
 
+variable "service_control_lambda_reserved_concurrency" {
+  description = "Reserved concurrency for the service control API Lambda (set to guarantee capacity and avoid throttling; set to null to disable)"
+  type        = number
+  default     = null
+}
+
 variable "service_control_schedule_overrides" {
-  description = "Overrides for service control automation schedule"
+  description = "Overrides for service control automation schedule (weekday/weekend/holiday start/stop/idle)"
   type = map(object({
-    enabled      = bool
-    start_time   = string
-    stop_time    = string
-    idle_minutes = number
+    enabled            = bool
+    start_time         = string
+    stop_time          = string
+    idle_minutes       = number
+    weekday_start_time = optional(string)
+    weekday_stop_time  = optional(string)
+    holiday_start_time = optional(string)
+    holiday_stop_time  = optional(string)
   }))
   default = {}
 }
@@ -1314,6 +1330,12 @@ variable "ecr_repo_sulu" {
   default     = null
 }
 
+variable "ecr_repo_sulu_nginx" {
+  description = "ECR repository name for the Sulu nginx companion image"
+  type        = string
+  default     = null
+}
+
 variable "ecr_repo_gitlab" {
   description = "ECR repository name for GitLab Omnibus"
   type        = string
@@ -1389,7 +1411,7 @@ variable "sulu_db_username" {
 variable "sulu_share_dir" {
   description = "Filesystem path used as Sulu's share directory inside the container"
   type        = string
-  default     = "/var/www/html/var/share"
+  default     = "/var/www/html/public/uploads/media"
 }
 
 variable "sulu_app_secret" {
@@ -1894,12 +1916,6 @@ variable "enable_growi_autostop" {
   default     = true
 }
 
-variable "enable_sulu_control_api" {
-  description = "Whether to create the sulu-only control API (Lambda + API Gateway)"
-  type        = bool
-  default     = true
-}
-
 variable "enable_orangehrm_autostop" {
   description = "Whether to enable OrangeHRM idle auto-stop (AppAutoScaling + CloudWatch alarm)"
   type        = bool
@@ -2209,12 +2225,6 @@ variable "keycloak_secrets" {
 variable "keycloak_ssm_params" {
   description = "SSM params specific to Keycloak (overrides defaults)"
   type        = map(string)
-  default     = null
-}
-
-variable "sulu_control_api_base_url" {
-  description = "Base URL for the sulu control API (if externally provided)"
-  type        = string
   default     = null
 }
 

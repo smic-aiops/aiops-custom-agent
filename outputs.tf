@@ -53,6 +53,11 @@ output "ecr_repo_sulu" {
   value       = var.ecr_repo_sulu
 }
 
+output "ecr_repo_sulu_nginx" {
+  description = "ECR repository name for the Sulu nginx companion image"
+  value       = var.ecr_repo_sulu_nginx
+}
+
 output "ecr_repo_gitlab" {
   description = "ECR repository name for GitLab Omnibus"
   value       = var.ecr_repo_gitlab
@@ -94,6 +99,7 @@ output "ecr_repositories" {
     n8n         = "${var.ecr_namespace}/${var.ecr_repo_n8n}"
     zulip       = "${var.ecr_namespace}/${var.ecr_repo_zulip}"
     sulu        = "${var.ecr_namespace}/${var.ecr_repo_sulu}"
+    sulu_nginx  = "${var.ecr_namespace}/${var.ecr_repo_sulu_nginx}"
     gitlab      = "${var.ecr_namespace}/${var.ecr_repo_gitlab}"
     odoo        = "${var.ecr_namespace}/${var.ecr_repo_odoo}"
     keycloak    = "${var.ecr_namespace}/${var.ecr_repo_keycloak}"
@@ -110,6 +116,7 @@ output "ecr_image_uris" {
     n8n         = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_n8n}:latest"
     zulip       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_zulip}:latest"
     sulu        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_sulu}:latest"
+    sulu_nginx  = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_sulu_nginx}:latest"
     gitlab      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_gitlab}:latest"
     odoo        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_odoo}:latest"
     keycloak    = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_keycloak}:latest"
@@ -213,11 +220,6 @@ output "service_urls" {
 output "enabled_services" {
   description = "ECS services enabled for deployment"
   value       = module.stack.enabled_services
-}
-
-output "sulu_control_api_base_url" {
-  description = "Base URL for the sulu control API (set via var.sulu_control_api_base_url)"
-  value       = module.stack.sulu_control_api_base_url
 }
 
 output "service_control_api_base_url" {

@@ -105,9 +105,11 @@ module "stack" {
   keycloak_base_url                         = var.keycloak_base_url
   keycloak_admin_username                   = var.keycloak_admin_username
   keycloak_admin_password                   = var.keycloak_admin_password
+  root_redirect_target_url                  = var.root_redirect_target_url
   ecr_repo_n8n                              = var.ecr_repo_n8n
   ecr_repo_zulip                            = var.ecr_repo_zulip
   ecr_repo_sulu                             = var.ecr_repo_sulu
+  ecr_repo_sulu_nginx                       = var.ecr_repo_sulu_nginx
   ecr_repo_gitlab                           = var.ecr_repo_gitlab
   ecr_repo_pgadmin                          = var.ecr_repo_pgadmin
   ecr_repo_phpmyadmin                       = var.ecr_repo_phpmyadmin
@@ -134,6 +136,7 @@ module "stack" {
   enable_odoo_keycloak                      = var.enable_odoo_keycloak
   enable_sulu_keycloak                      = var.enable_sulu_keycloak
   enable_service_control                    = var.enable_service_control
+  service_control_lambda_reserved_concurrency = var.service_control_lambda_reserved_concurrency
   service_control_schedule_overrides        = var.service_control_schedule_overrides
   service_control_keycloak_client_id        = var.service_control_keycloak_client_id
   enable_efs_backup                         = var.enable_efs_backup
@@ -219,8 +222,6 @@ module "stack" {
   orangehrm_task_memory                     = var.orangehrm_task_memory
   gitlab_task_cpu                           = var.gitlab_task_cpu
   gitlab_task_memory                        = var.gitlab_task_memory
-  enable_sulu_control_api                   = var.enable_sulu_control_api
-  sulu_control_api_base_url                 = var.sulu_control_api_base_url
   zulip_image_tag                           = var.zulip_image_tag
   growi_docdb_engine_version                = var.growi_docdb_engine_version
   docdb_deletion_protection                 = var.docdb_deletion_protection

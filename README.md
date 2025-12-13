@@ -27,7 +27,7 @@
 
 - `main.tf` / `variables.tf` / `outputs.tf`: ルートのプロバイダ、変数、出力。`modules/stack` を呼び出す。
 - `modules/stack/`: ネットワーク、RDS、SSM、DNS+ACM+CloudFront 制御サイト、ECS、WAF など基盤をまとめたモジュール。`templates/control-index.html.tftpl` はコントロールサイトの HTML テンプレート。
-- `docker/`: サービス用 Docker ビルドコンテキスト（例: n8n、sulu）。`docker/sulu` は `shinsenter/sulu:php8.4` をベースにコントロールサイト SSO 設定とマイグレーション用フック（`hooks/onready/10-sulu-migrations.sh`）を追加した専用コンテキストです。
+- `docker/`: サービス用 Docker ビルドコンテキスト（例: n8n、sulu）。`docker/sulu` は GitHub リリースの Sulu 3.0.0 を PHP 8.2 ベースのマルチステージビルドで取り込み、コントロールサイト SSO 設定とマイグレーション用フック（`hooks/onready/10-sulu-migrations.sh`）を加えた専用コンテキストです。
 - `scripts/`: イメージの pull/build/push、および ECS 再デプロイを行う補助スクリプト。
 - `images/`: ローカルに展開したイメージのキャッシュ置き場（git 管理外）。
 - `service-operations-platform.md`: サービス運用プラットフォームの補足資料。

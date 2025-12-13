@@ -2,14 +2,6 @@ locals {
   control_site_domain      = "${var.control_subdomain}.${local.hosted_zone_name_input}"
   control_site_bucket_name = "${local.name_prefix}-${replace(local.hosted_zone_name_input, ".", "-")}-control-site"
   control_site_enabled     = var.enable_service_control
-  sulu_control_api_base_url_effective = trim(
-    coalesce(
-      var.sulu_control_api_base_url != "" ? var.sulu_control_api_base_url : null,
-      try(aws_apigatewayv2_stage.sulu_control[0].invoke_url, null),
-      ""
-    ),
-    "/"
-  )
   service_control_api_base_url_effective = trim(
     coalesce(
       var.service_control_api_base_url != "" ? var.service_control_api_base_url : null,
@@ -18,7 +10,7 @@ locals {
     ),
     "/"
   )
-  control_api_base_url_effective = local.service_control_api_base_url_effective != "" ? local.service_control_api_base_url_effective : local.sulu_control_api_base_url_effective
+  control_api_base_url_effective = local.service_control_api_base_url_effective
   keycloak_base_url_effective = coalesce(
     var.keycloak_base_url != null && var.keycloak_base_url != "" ? var.keycloak_base_url : null,
     "https://keycloak.${local.hosted_zone_name_input}"
@@ -46,12 +38,26 @@ locals {
     pgadmin        = var.enable_pgadmin_autostop
     phpmyadmin     = var.enable_phpmyadmin_autostop
   }
+  service_control_enabled_services = keys(local.service_control_api_services)
+  control_site_schedule_defaults = {
+    weekday_start = "17:00"
+    weekday_stop  = "22:00"
+    holiday_start = "08:00"
+    holiday_stop  = "23:00"
+    idle_minutes  = 60
+  }
   control_site_index = templatefile("${path.module}/templates/control-index.html.tftpl", {
     api_base_url                   = local.control_api_base_url_effective,
     keycloak_base_url              = local.keycloak_base_url_effective,
     keycloak_realm                 = local.control_site_keycloak_realm,
     keycloak_client_id             = local.service_control_keycloak_client_id_effective,
-    service_control_autostop_flags = jsonencode(local.service_control_autostop_flags)
+    service_control_autostop_flags = jsonencode(local.service_control_autostop_flags),
+    service_control_enabled_svcs   = jsonencode(local.service_control_enabled_services),
+    DEFAULT_WEEKDAY_START_JST      = local.control_site_schedule_defaults.weekday_start,
+    DEFAULT_WEEKDAY_STOP_JST       = local.control_site_schedule_defaults.weekday_stop,
+    DEFAULT_HOLIDAY_START_JST      = local.control_site_schedule_defaults.holiday_start,
+    DEFAULT_HOLIDAY_STOP_JST       = local.control_site_schedule_defaults.holiday_stop,
+    DEFAULT_IDLE_MINUTES           = local.control_site_schedule_defaults.idle_minutes
   })
   wildcard_cf_cert_name = "${local.name_prefix}-cf-wildcard-cert"
   control_site_aliases  = [local.control_site_domain]

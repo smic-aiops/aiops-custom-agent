@@ -90,13 +90,29 @@ variable "enable_service_control" {
   default     = true
 }
 
+variable "root_redirect_target_url" {
+  description = "Target URL for apex/www domain redirects (set null to disable redirect buckets)"
+  type        = string
+  default     = "https://github.com/smic-aiops/aiops-custom-agent/blob/main/environment-usage-guide.md"
+}
+
+variable "service_control_lambda_reserved_concurrency" {
+  description = "Reserved concurrency for the service control API Lambda (set to guarantee capacity and avoid throttling; set to null to disable)"
+  type        = number
+  default     = null
+}
+
 variable "service_control_schedule_overrides" {
-  description = "Overrides for service control automation schedule (enabled/start/stop/idle)"
+  description = "Overrides for service control automation schedule (weekday/weekend/holiday start/stop/idle)"
   type = map(object({
-    enabled      = bool
-    start_time   = string
-    stop_time    = string
-    idle_minutes = number
+    enabled            = bool
+    start_time         = string
+    stop_time          = string
+    idle_minutes       = number
+    weekday_start_time = optional(string)
+    weekday_stop_time  = optional(string)
+    holiday_start_time = optional(string)
+    holiday_stop_time  = optional(string)
   }))
   default = {}
 }
@@ -588,10 +604,16 @@ variable "ecr_repo_sulu" {
   default     = "sulu"
 }
 
-variable "sulu_image_tag" {
-  description = "Sulu base image tag (shinsenter/sulu)"
+variable "ecr_repo_sulu_nginx" {
+  description = "ECR repository name for the Sulu nginx companion image"
   type        = string
-  default     = "php8.4"
+  default     = "sulu-nginx"
+}
+
+variable "sulu_image_tag" {
+  description = "Sulu base image tag used for docker/sulu builds (default mirrors the GitHub 3.0.0 release)"
+  type        = string
+  default     = "3.0.0"
 }
 
 variable "sulu_db_name" {
@@ -607,9 +629,9 @@ variable "sulu_db_username" {
 }
 
 variable "sulu_share_dir" {
-  description = "Filesystem location used as Sulu's share directory"
+  description = "Filesystem location used as Sulu's share directory (must align with public/uploads/media)"
   type        = string
-  default     = "/var/www/html/var/share"
+  default     = "/var/www/html/public/uploads/media"
 }
 
 variable "sulu_filesystem_id" {
@@ -619,9 +641,9 @@ variable "sulu_filesystem_id" {
 }
 
 variable "sulu_filesystem_path" {
-  description = "Container path to mount persistent storage for sulu uploads/share"
+  description = "Container path where the shared EFS is mounted"
   type        = string
-  default     = "/var/www/html/var/share"
+  default     = "/efs"
 }
 
 variable "sulu_efs_availability_zone" {
@@ -648,18 +670,6 @@ variable "sulu_sso_default_role_key" {
   description = "Default role key assigned to Keycloak-authenticated Sulu users"
   type        = string
   default     = "ROLE_USER"
-}
-
-variable "enable_sulu_control_api" {
-  description = "Whether to expose the per-service control API for Sulu"
-  type        = bool
-  default     = true
-}
-
-variable "sulu_control_api_base_url" {
-  description = "Base URL for the sulu control API (if externally provided)"
-  type        = string
-  default     = ""
 }
 
 # Exastro IT Automation stack

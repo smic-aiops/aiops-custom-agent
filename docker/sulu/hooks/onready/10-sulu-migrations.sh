@@ -24,3 +24,12 @@ fi
 php bin/console doctrine:database:create --if-not-exists --no-interaction || true
 php bin/console doctrine:migrations:migrate --no-interaction
 php bin/console sulu:document:init --no-interaction || true
+
+# Redirect root URL to /public/ so health checks and browsers hit the application path.
+cat <<'EOF' > /var/www/html/index.php
+<?php
+header('Location: /public/', true, 302);
+exit;
+EOF
+
+chown www-data:www-data /var/www/html/index.php

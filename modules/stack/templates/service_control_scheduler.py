@@ -1,7 +1,7 @@
 import json
 import math
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import boto3
 
@@ -29,6 +29,7 @@ SERVICE_CONTROL_AUTOSTOP_ALARM_STATISTIC = os.environ.get("SERVICE_CONTROL_AUTOS
 SERVICE_CONTROL_AUTOSTOP_ALARM_COMPARISON_OPERATOR = os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_COMPARISON_OPERATOR", "LessThanOrEqualToThreshold")
 SERVICE_CONTROL_AUTOSTOP_ALARM_THRESHOLD = float(os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_THRESHOLD", "0"))
 SERVICE_CONTROL_AUTOSTOP_ALARM_TREAT_MISSING_DATA = os.environ.get("SERVICE_CONTROL_AUTOSTOP_ALARM_TREAT_MISSING_DATA", "notBreaching")
+HOLIDAY_CACHE = {}
 
 
 def _parse_cluster_arn(cluster_arn):
@@ -89,10 +90,101 @@ SERVICE_CONTROL_AUTOSTOP_POLICIES = _load_autostop_policies()
 
 DEFAULT_SCHEDULE = {
     "enabled": False,
-    "start_time": "09:00",
+    "start_time": "17:00",
     "stop_time": "22:00",
+    "weekday_start_time": "17:00",
+    "weekday_stop_time": "22:00",
+    "holiday_start_time": "08:00",
+    "holiday_stop_time": "23:00",
     "idle_minutes": 60,
 }
+DEFAULT_START_MINUTES = 17 * 60
+DEFAULT_STOP_MINUTES = 22 * 60
+
+
+def _nth_weekday(year, month, weekday, nth):
+    first = date(year, month, 1)
+    offset = (weekday - first.weekday() + 7) % 7
+    return first + timedelta(days=offset + 7 * (nth - 1))
+
+
+def _japan_equinox(year, spring=True):
+    base = 20.8431 if spring else 23.2488
+    day = math.floor(base + 0.242194 * (year - 1980) - math.floor((year - 1980) / 4))
+    month = 3 if spring else 9
+    return date(year, month, day)
+
+
+def _base_japan_holidays(year):
+    holidays = {
+        date(year, 1, 1),
+        date(year, 2, 11),
+        _japan_equinox(year, True),
+        date(year, 4, 29),
+        date(year, 5, 3),
+        date(year, 5, 4),
+        date(year, 5, 5),
+        _japan_equinox(year, False),
+        date(year, 11, 3),
+        date(year, 11, 23),
+    }
+    holidays.add(_nth_weekday(year, 1, 0, 2) if year >= 2000 else date(year, 1, 15))
+    if year >= 2020:
+        holidays.add(date(year, 2, 23))
+    elif 1989 <= year <= 2018:
+        holidays.add(date(year, 12, 23))
+    if year >= 2003:
+        holidays.add(_nth_weekday(year, 7, 0, 3))
+    elif year >= 1996:
+        holidays.add(date(year, 7, 20))
+    if year >= 2016:
+        holidays.add(date(year, 8, 11))
+    if year >= 2003:
+        holidays.add(_nth_weekday(year, 9, 0, 3))
+    elif year >= 1966:
+        holidays.add(date(year, 9, 15))
+    holidays.add(_nth_weekday(year, 10, 0, 2) if year >= 2000 else date(year, 10, 10))
+    return holidays
+
+
+def _apply_substitute_holidays(holidays):
+    substitutes = set()
+    for holiday in sorted(holidays):
+        if holiday.weekday() != 6:
+            continue
+        candidate = holiday + timedelta(days=1)
+        while candidate in holidays or candidate in substitutes:
+            candidate += timedelta(days=1)
+        substitutes.add(candidate)
+    return substitutes
+
+
+def _apply_bridge_holidays(holidays):
+    bridges = set()
+    for holiday in holidays:
+        candidate = holiday + timedelta(days=1)
+        if candidate in holidays or candidate.weekday() >= 5:
+            continue
+        if candidate + timedelta(days=1) in holidays:
+            bridges.add(candidate)
+    return bridges
+
+
+def _japan_holidays(year):
+    if year in HOLIDAY_CACHE:
+        return HOLIDAY_CACHE[year]
+    holidays = _base_japan_holidays(year)
+    holidays |= _apply_substitute_holidays(holidays)
+    holidays |= _apply_bridge_holidays(holidays)
+    holidays |= _apply_substitute_holidays(holidays)
+    HOLIDAY_CACHE[year] = holidays
+    return holidays
+
+
+def _is_off_day(local_date):
+    if local_date.weekday() >= 5:
+        return True
+    return local_date in _japan_holidays(local_date.year)
 
 
 
@@ -141,23 +233,47 @@ def _ensure_schedule(service_key):
         schedule = dict(DEFAULT_SCHEDULE)
         _put_schedule(service_key, schedule)
         return schedule
-    needs_update = schedule.get("idle_minutes") != DEFAULT_SCHEDULE["idle_minutes"]
+    required_keys = [
+        "start_time",
+        "stop_time",
+        "weekday_start_time",
+        "weekday_stop_time",
+        "holiday_start_time",
+        "holiday_stop_time",
+        "idle_minutes",
+    ]
+    needs_update = any(key not in schedule for key in required_keys)
     normalized = {**DEFAULT_SCHEDULE, **schedule}
     if needs_update:
         _put_schedule(service_key, normalized)
     return normalized
 
 
-def _current_minutes():
-    now = datetime.now(timezone.utc) + timedelta(hours=JST_OFFSET)
-    return now.hour * 60 + now.minute
+def _current_local_datetime():
+    return datetime.now(timezone.utc) + timedelta(hours=JST_OFFSET)
 
 
-def _should_be_active(schedule, current_minutes):
+def _time_window(schedule, local_dt):
+    base_start_raw = schedule.get("start_time", DEFAULT_SCHEDULE["start_time"])
+    base_stop_raw = schedule.get("stop_time", DEFAULT_SCHEDULE["stop_time"])
+    base_start = _parse_time(base_start_raw, DEFAULT_START_MINUTES)
+    base_stop = _parse_time(base_stop_raw, DEFAULT_STOP_MINUTES)
+    if _is_off_day(local_dt.date()):
+        start_raw = schedule.get("holiday_start_time") or base_start_raw
+        stop_raw = schedule.get("holiday_stop_time") or base_stop_raw
+    else:
+        start_raw = schedule.get("weekday_start_time") or base_start_raw
+        stop_raw = schedule.get("weekday_stop_time") or base_stop_raw
+    start = _parse_time(start_raw, base_start)
+    stop = _parse_time(stop_raw, base_stop)
+    return start, stop
+
+
+def _should_be_active(schedule, local_dt):
     if not schedule or not schedule.get("enabled"):
         return False
-    start = _parse_time(schedule.get("start_time", "09:00"), 9 * 60)
-    stop = _parse_time(schedule.get("stop_time", "22:00"), 22 * 60)
+    current_minutes = local_dt.hour * 60 + local_dt.minute
+    start, stop = _time_window(schedule, local_dt)
     if start <= stop:
         return start <= current_minutes < stop
     return current_minutes >= start or current_minutes < stop
@@ -218,13 +334,13 @@ def _update_idle_alarm(service_key, schedule, active):
 
 
 def handler(event, context):
-    current_minutes = _current_minutes()
+    local_now = _current_local_datetime()
     for service_key in SERVICE_CONTROL_SCHEDULE_SERVICES:
         service_arn = SERVICE_ARNS.get(service_key)
         if not service_arn:
             continue
         schedule = _ensure_schedule(service_key)
-        active = _should_be_active(schedule, current_minutes)
+        active = _should_be_active(schedule, local_now)
         _update_idle_alarm(service_key, schedule, active)
         desired = START_DESIRED if active else 0
         current = _describe_current_desired(service_arn)

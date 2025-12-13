@@ -105,11 +105,6 @@ output "enabled_services" {
 #   }
 # }
 
-output "sulu_control_api_base_url" {
-  description = "Base URL for the sulu control API (set via var.sulu_control_api_base_url)"
-  value       = local.sulu_control_api_base_url_effective
-}
-
 output "service_control_api_base_url" {
   description = "Base URL for the service control API (n8n/zulip/sulu/keycloak/odoo/pgadmin/phpmyadmin/gitlab)"
   value       = local.service_control_api_base_url_effective

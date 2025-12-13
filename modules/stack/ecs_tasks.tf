@@ -15,24 +15,26 @@ locals {
     var.create_orangehrm ? "orangehrm" : "",
     var.create_zulip ? "zulip" : ""
   ]) : []
-  ecr_uri_n8n           = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_n8n}:latest"
-  ecr_uri_exastro_web   = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_exastro_it_automation_web_server}:latest"
-  ecr_uri_exastro_api   = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_exastro_it_automation_api_admin}:latest"
-  ecr_uri_sulu          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_sulu}:latest"
-  ecr_uri_pgadmin       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_pgadmin}:latest"
-  ecr_uri_phpmyadmin    = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_phpmyadmin}:latest"
-  ecr_uri_keycloak      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_keycloak}:latest"
-  ecr_uri_odoo          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_odoo}:latest"
-  ecr_uri_gitlab        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_gitlab}:latest"
-  ecr_uri_growi         = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_growi}:latest"
-  ecr_uri_cmdbuild_r2u  = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_cmdbuild_r2u}:latest"
-  ecr_uri_orangehrm     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_orangehrm}:latest"
-  ecr_uri_zulip         = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_zulip}:latest"
-  keycloak_realm        = "master"
-  keycloak_issuer_url   = "https://keycloak.${local.hosted_zone_name_input}/realms/${local.keycloak_realm}"
-  keycloak_auth_url     = "${local.keycloak_issuer_url}/protocol/openid-connect/auth"
-  keycloak_token_url    = "${local.keycloak_issuer_url}/protocol/openid-connect/token"
-  keycloak_userinfo_url = "${local.keycloak_issuer_url}/protocol/openid-connect/userinfo"
+  ecr_uri_n8n              = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_n8n}:latest"
+  ecr_uri_exastro_web      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_exastro_it_automation_web_server}:latest"
+  ecr_uri_exastro_api      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_exastro_it_automation_api_admin}:latest"
+  sulu_image_tag_effective = var.sulu_image_tag != null && var.sulu_image_tag != "" ? var.sulu_image_tag : "latest"
+  ecr_uri_sulu             = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_sulu}:${local.sulu_image_tag_effective}"
+  ecr_uri_sulu_nginx       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_sulu_nginx}:${local.sulu_image_tag_effective}"
+  ecr_uri_pgadmin          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_pgadmin}:latest"
+  ecr_uri_phpmyadmin       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_phpmyadmin}:latest"
+  ecr_uri_keycloak         = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_keycloak}:latest"
+  ecr_uri_odoo             = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_odoo}:latest"
+  ecr_uri_gitlab           = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_gitlab}:latest"
+  ecr_uri_growi            = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_growi}:latest"
+  ecr_uri_cmdbuild_r2u     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_cmdbuild_r2u}:latest"
+  ecr_uri_orangehrm        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_orangehrm}:latest"
+  ecr_uri_zulip            = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_namespace}/${var.ecr_repo_zulip}:latest"
+  keycloak_realm           = "master"
+  keycloak_issuer_url      = "https://keycloak.${local.hosted_zone_name_input}/realms/${local.keycloak_realm}"
+  keycloak_auth_url        = "${local.keycloak_issuer_url}/protocol/openid-connect/auth"
+  keycloak_token_url       = "${local.keycloak_issuer_url}/protocol/openid-connect/token"
+  keycloak_userinfo_url    = "${local.keycloak_issuer_url}/protocol/openid-connect/userinfo"
   default_ssm_params_n8n = {
     DB_USER            = local.n8n_db_username_parameter_name
     DB_PASSWORD        = local.n8n_db_password_parameter_name
@@ -300,8 +302,10 @@ locals {
     APP_ENV                   = "prod"
     DEFAULT_URI               = "https://${local.sulu_host}"
     APP_SHARE_DIR             = var.sulu_share_dir
-    SEAL_DSN                  = "loupe://%kernel.project_dir%/var/indexes"
+    SEAL_DSN                  = "loupe:///var/indexes"
     LOCK_DSN                  = "semaphore"
+    REDIS_URL                 = "redis://127.0.0.1:6379"
+    LOUPE_DSN                 = "loupe:///var/indexes"
     TZ                        = "Asia/Tokyo"
     SULU_ADMIN_EMAIL          = "admin@${local.hosted_zone_name_input}"
     SULU_HOST                 = local.sulu_host
@@ -1041,15 +1045,79 @@ resource "aws_ecs_task_definition" "sulu" {
     ] : [],
     [
       merge(local.ecs_base_container, {
-        name  = "sulu"
-        image = local.ecr_uri_sulu
-        user  = "0:0"
+        name      = "redis"
+        image     = "redis:7-alpine"
+        essential = true
         portMappings = [{
-          containerPort = 80
-          hostPort      = 80
+          containerPort = 6379
+          hostPort      = 6379
           protocol      = "tcp"
         }]
-        environment = [for k, v in merge(local.default_environment_sulu, coalesce(var.sulu_environment, {})) : { name = k, value = v }]
+        healthCheck = {
+          command     = ["CMD-SHELL", "redis-cli ping | grep PONG"]
+          interval    = 10
+          timeout     = 5
+          retries     = 5
+          startPeriod = 10
+        }
+        mountPoints = local.sulu_efs_id != null ? [
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = var.sulu_filesystem_path
+            readOnly      = false
+          }
+        ] : []
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group"         = aws_cloudwatch_log_group.ecs["sulu"].name
+            "awslogs-stream-prefix" = "redis"
+          })
+        })
+      }),
+      merge(local.ecs_base_container, {
+        name      = "loupe-indexer"
+        image     = "public.ecr.aws/docker/library/alpine:3.20"
+        essential = false
+        command   = ["sh", "-c", "sleep infinity"]
+        mountPoints = local.sulu_efs_id != null ? [
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = var.sulu_filesystem_path
+            readOnly      = false
+          },
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = "/var/indexes"
+            readOnly      = false
+          }
+        ] : []
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group"         = aws_cloudwatch_log_group.ecs["sulu"].name
+            "awslogs-stream-prefix" = "loupe"
+          })
+        })
+      }),
+      merge(local.ecs_base_container, {
+        name       = "init-db"
+        image      = local.ecr_uri_sulu
+        essential  = false
+        entryPoint = ["/bin/sh", "-c"]
+        command    = ["/app/docker/init-db.sh"]
+        environment = [
+          {
+            name  = "APP_ENV"
+            value = "prod"
+          },
+          {
+            name  = "REDIS_URL"
+            value = "redis://127.0.0.1:6379"
+          },
+          {
+            name  = "LOUPE_DSN"
+            value = "loupe:///var/indexes"
+          }
+        ]
         secrets = concat(
           var.sulu_secrets,
           [for k, v in local.ssm_param_arns_sulu : { name = k, valueFrom = v }]
@@ -1059,17 +1127,135 @@ resource "aws_ecs_task_definition" "sulu" {
             sourceVolume  = "sulu-share"
             containerPath = var.sulu_filesystem_path
             readOnly      = false
-          }
-        ] : []
-        dependsOn = local.sulu_efs_id != null ? [
+          },
           {
-            containerName = "sulu-fs-init"
-            condition     = "COMPLETE"
+            sourceVolume  = "sulu-share"
+            containerPath = var.sulu_share_dir
+            readOnly      = false
+          },
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = "/var/www/html/var/indexes"
+            readOnly      = false
           }
         ] : []
+        dependsOn = concat(
+          local.sulu_efs_id != null ? [
+            {
+              containerName = "sulu-fs-init"
+              condition     = "COMPLETE"
+            }
+          ] : [],
+          [
+            {
+              containerName = "redis"
+              condition     = "HEALTHY"
+            },
+            {
+              containerName = "loupe-indexer"
+              condition     = "START"
+            }
+          ]
+        )
         logConfiguration = merge(local.ecs_base_container.logConfiguration, {
           options = merge(local.ecs_base_container.logConfiguration.options, {
-            "awslogs-group" = aws_cloudwatch_log_group.ecs["sulu"].name
+            "awslogs-group"         = aws_cloudwatch_log_group.ecs["sulu"].name
+            "awslogs-stream-prefix" = "init-db"
+          })
+        })
+      }),
+      merge(local.ecs_base_container, {
+        name  = "php-fpm"
+        image = local.ecr_uri_sulu
+        user  = "0:0"
+        portMappings = [{
+          containerPort = 9000
+          hostPort      = 9000
+          protocol      = "tcp"
+        }]
+        environment = [
+          for k, v in merge(local.default_environment_sulu, coalesce(var.sulu_environment, {})) :
+          {
+            name  = k
+            value = v
+          }
+        ]
+        secrets = concat(
+          var.sulu_secrets,
+          [for k, v in local.ssm_param_arns_sulu : { name = k, valueFrom = v }]
+        )
+        mountPoints = local.sulu_efs_id != null ? [
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = var.sulu_filesystem_path
+            readOnly      = false
+          },
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = var.sulu_share_dir
+            readOnly      = false
+          },
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = "/var/www/html/var/indexes"
+            readOnly      = false
+          }
+        ] : []
+        dependsOn = concat(
+          local.sulu_efs_id != null ? [
+            {
+              containerName = "sulu-fs-init"
+              condition     = "COMPLETE"
+            }
+          ] : [],
+          [
+            {
+              containerName = "init-db"
+              condition     = "SUCCESS"
+            },
+            {
+              containerName = "redis"
+              condition     = "HEALTHY"
+            },
+            {
+              containerName = "loupe-indexer"
+              condition     = "START"
+            }
+          ]
+        )
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group"         = aws_cloudwatch_log_group.ecs["sulu"].name
+            "awslogs-stream-prefix" = "php"
+          })
+        })
+      }),
+      merge(local.ecs_base_container, {
+        name      = "nginx"
+        image     = local.ecr_uri_sulu_nginx
+        essential = true
+        portMappings = [{
+          containerPort = 80
+          hostPort      = 80
+          protocol      = "tcp"
+        }]
+        mountPoints = local.sulu_efs_id != null ? [
+          {
+            sourceVolume  = "sulu-share"
+            containerPath = var.sulu_share_dir
+            readOnly      = false
+          }
+        ] : []
+        dependsOn = [
+          {
+            containerName = "php-fpm"
+            condition     = "START"
+          }
+        ]
+        logConfiguration = merge(local.ecs_base_container.logConfiguration, {
+          options = merge(local.ecs_base_container.logConfiguration.options, {
+            "awslogs-group"         = aws_cloudwatch_log_group.ecs["sulu"].name
+            "awslogs-stream-prefix" = "nginx"
           })
         })
       })

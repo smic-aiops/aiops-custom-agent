@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the sulu image by layering config/migrations on shinsenter/sulu:php8.4 and push the final image to ECR.
-# Falls back to retagging the locally cached image if the build context is missing.
-# Optional environment variables:
-#   AWS_PROFILE, AWS_ACCOUNT_ID, AWS_REGION, ECR_PREFIX, ECR_REPO_SULU
-#   LOCAL_PREFIX, SULU_CONTEXT, SULU_IMAGE_TAG, IMAGE_ARCH, SULU_IMAGE
+tf_output_raw() {
+  terraform output -lock=false -raw "$1" 2>/dev/null || true
+}
 
 if [ -z "${AWS_PROFILE:-}" ]; then
-  AWS_PROFILE="$(terraform output -raw aws_profile 2>/dev/null || true)"
+  AWS_PROFILE="$(tf_output_raw aws_profile)"
 fi
 AWS_PROFILE="${AWS_PROFILE:-Admin-AIOps}"
 export AWS_PROFILE
@@ -16,25 +14,47 @@ export AWS_PROFILE
 if [ -z "${AWS_ACCOUNT_ID:-}" ]; then
   AWS_ACCOUNT_ID="$(aws --profile "${AWS_PROFILE}" sts get-caller-identity --query Account --output text)"
 fi
+
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 if [ -z "${ECR_PREFIX:-}" ]; then
-  ECR_PREFIX="$(terraform output -raw ecr_namespace 2>/dev/null || echo "aiops")"
+  ECR_PREFIX="$(tf_output_raw ecr_namespace)"
 fi
 if [ -z "${ECR_REPO_SULU:-}" ]; then
-  ECR_REPO_SULU="$(terraform output -raw ecr_repo_sulu 2>/dev/null || echo "sulu")"
+  ECR_REPO_SULU="$(tf_output_raw ecr_repo_sulu)"
 fi
-LOCAL_PREFIX="${LOCAL_PREFIX:-local}"
-SULU_CONTEXT="${SULU_CONTEXT:-./docker/sulu}"
+if [ -z "${ECR_REPO_SULU_NGINX:-}" ]; then
+  ECR_REPO_SULU_NGINX="$(tf_output_raw ecr_repo_sulu_nginx)"
+fi
+ECR_PREFIX="${ECR_PREFIX:-aiops}"
+ECR_REPO_SULU="${ECR_REPO_SULU:-sulu}"
+ECR_REPO_SULU_NGINX="${ECR_REPO_SULU_NGINX:-sulu-nginx}"
 
-if [ -z "${SULU_IMAGE_TAG:-}" ]; then
-  SULU_IMAGE_TAG="$(terraform output -raw sulu_image_tag 2>/dev/null || echo "php8.4")"
-fi
-if [ -z "${SULU_IMAGE:-}" ]; then
-  SULU_IMAGE="shinsenter/sulu:${SULU_IMAGE_TAG}"
-fi
-if [ -z "${IMAGE_ARCH:-}" ]; then
-  IMAGE_ARCH="$(terraform output -raw image_architecture 2>/dev/null || echo "linux/amd64")"
-fi
+SULU_IMAGE_TAG="${SULU_IMAGE_TAG:-$(tf_output_raw sulu_image_tag)}"
+SULU_IMAGE_TAG="${SULU_IMAGE_TAG:-3.0.0}"
+SULU_CONTEXT="${SULU_CONTEXT:-./docker/sulu}"
+SULU_NGINX_CONTEXT="${SULU_NGINX_CONTEXT:-${SULU_CONTEXT}/nginx}"
+SULU_SOURCE_DIR="${SULU_SOURCE_DIR:-${SULU_CONTEXT}/source}"
+IMAGE_ARCH="${IMAGE_ARCH:-$(tf_output_raw image_architecture)}"
+IMAGE_ARCH="${IMAGE_ARCH:-linux/amd64}"
+
+ensure_context() {
+  local context="$1" name="$2"
+  if [ ! -d "${context}" ]; then
+    echo "[sulu:${name}] Context ${context} is missing." >&2
+    exit 1
+  fi
+  if [ ! -f "${context}/Dockerfile" ]; then
+    echo "[sulu:${name}] Dockerfile missing in ${context}; rerun scripts/pull_sulu_image.sh or add a Dockerfile." >&2
+    exit 1
+  fi
+}
+
+ensure_source_dir() {
+  if [ ! -d "${SULU_SOURCE_DIR}" ]; then
+    echo "[sulu:php] Source directory ${SULU_SOURCE_DIR} is missing; run scripts/pull_sulu_image.sh first." >&2
+    exit 1
+  fi
+}
 
 login_ecr() {
   aws --profile "${AWS_PROFILE}" ecr get-login-password --region "${AWS_REGION}" \
@@ -52,39 +72,44 @@ ensure_repo() {
   fi
 }
 
-build_or_retag() {
-  local context="$1" ecr_uri="$2" tag="$3"
-  local fallback="${LOCAL_PREFIX}/sulu:latest"
+build_image() {
+  local context="$1" ecr_uri="$2" label="$3" extra_args="$4"
+  echo "[sulu:${label}] Building ${ecr_uri}:latest from ${context} (${IMAGE_ARCH})..."
+  docker build \
+    --platform "${IMAGE_ARCH}" \
+    --label "org.opencontainers.image.version=${SULU_IMAGE_TAG}" \
+    --label "org.opencontainers.image.title=Sulu PHP" \
+    ${extra_args:-} \
+    -t "${ecr_uri}:latest" \
+    "${context}"
+}
 
-  if [ -d "${context}" ]; then
-    echo "[sulu] Building ${tag} from ${context} (${IMAGE_ARCH})..."
-    docker build \
-      --platform "${IMAGE_ARCH}" \
-      --label "org.opencontainers.image.title=sulu" \
-      --label "org.opencontainers.image.version=${tag}" \
-      --label "org.opencontainers.image.vendor=${ECR_PREFIX}" \
-      --build-arg SULU_IMAGE="${SULU_IMAGE}" \
-      -t "${ecr_uri}:latest" \
-      "${context}"
-  else
-    if ! docker image inspect "${fallback}" >/dev/null 2>&1; then
-      echo "[sulu] Context ${context} not found and fallback image ${fallback} missing. Run scripts/pull_sulu_image.sh first."
-      exit 1
-    fi
-    echo "[sulu] Context ${context} missing; re-tagging ${fallback} -> ${ecr_uri}:latest"
-    docker tag "${fallback}" "${ecr_uri}:latest"
-  fi
+push_image() {
+  local ecr_uri="$1" label="$2"
+  docker push "${ecr_uri}:latest"
+  docker tag "${ecr_uri}:latest" "${ecr_uri}:${SULU_IMAGE_TAG}"
+  docker push "${ecr_uri}:${SULU_IMAGE_TAG}"
+  echo "[sulu:${label}] Pushed ${ecr_uri}:latest and ${ecr_uri}:${SULU_IMAGE_TAG}"
 }
 
 main() {
-  local repo="${ECR_PREFIX}/${ECR_REPO_SULU}"
-  local ecr_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${repo}"
+  ensure_context "${SULU_CONTEXT}" "php"
+  ensure_context "${SULU_NGINX_CONTEXT}" "nginx"
+  ensure_source_dir
+
+  local repo_php="${ECR_PREFIX}/${ECR_REPO_SULU}"
+  local repo_nginx="${ECR_PREFIX}/${ECR_REPO_SULU_NGINX}"
+  local ecr_uri_php="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${repo_php}"
+  local ecr_uri_nginx="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${repo_nginx}"
 
   login_ecr
-  ensure_repo "${repo}"
-  build_or_retag "${SULU_CONTEXT}" "${ecr_uri}" "${SULU_IMAGE_TAG}"
-  docker push "${ecr_uri}:latest"
-  echo "[sulu] Pushed ${ecr_uri}:latest"
+  ensure_repo "${repo_php}"
+  ensure_repo "${repo_nginx}"
+
+  build_image "${SULU_CONTEXT}" "${ecr_uri_php}" "php" "--build-arg SULU_VERSION=${SULU_IMAGE_TAG}"
+  push_image "${ecr_uri_php}" "php"
+  build_image "${SULU_NGINX_CONTEXT}" "${ecr_uri_nginx}" "nginx"
+  push_image "${ecr_uri_nginx}" "nginx"
 }
 
 main "$@"

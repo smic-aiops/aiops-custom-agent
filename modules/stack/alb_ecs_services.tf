@@ -158,7 +158,7 @@ resource "aws_lb_target_group" "zulip" {
   vpc_id      = local.vpc_id
 
   health_check {
-    path                = "/"
+    path                = "/public/"
     matcher             = "200-499" # Zulip returns 400 for invalid Host headers used by ALB health checks
     healthy_threshold   = 2
     unhealthy_threshold = 5
@@ -183,7 +183,7 @@ resource "aws_lb_target_group" "exastro_web" {
   vpc_id      = local.vpc_id
 
   health_check {
-    path                = "/"
+    path                = "/healthz"
     matcher             = "200-399"
     healthy_threshold   = 2
     unhealthy_threshold = 5
@@ -1742,13 +1742,13 @@ resource "aws_ecs_service" "exastro_api_admin" {
 resource "aws_ecs_service" "sulu" {
   count = var.create_ecs && var.create_sulu ? 1 : 0
 
-  name                   = "${local.name_prefix}-sulu"
-  cluster                = aws_ecs_cluster.this[0].id
-  task_definition        = aws_ecs_task_definition.sulu[0].arn
-  desired_count          = var.sulu_desired_count
-  launch_type            = "FARGATE"
+  name                              = "${local.name_prefix}-sulu"
+  cluster                           = aws_ecs_cluster.this[0].id
+  task_definition                   = aws_ecs_task_definition.sulu[0].arn
+  desired_count                     = var.sulu_desired_count
+  launch_type                       = "FARGATE"
   health_check_grace_period_seconds = var.sulu_health_check_grace_period_seconds
-  enable_execute_command = true
+  enable_execute_command            = true
 
   network_configuration {
     subnets          = [local.service_subnet_id]
@@ -1758,7 +1758,7 @@ resource "aws_ecs_service" "sulu" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.sulu[0].arn
-    container_name   = "sulu"
+    container_name   = "nginx"
     container_port   = 80
   }
 

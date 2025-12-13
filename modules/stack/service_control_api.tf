@@ -3,6 +3,8 @@ locals {
   service_control_lambda_name    = "${local.name_prefix}-svc-control"
   service_control_lambda_role    = "${local.name_prefix}-svc-control-lambda"
   service_control_api_stage_name = "$default"
+  service_control_api_log_group  = "/aws/apigw/${local.name_prefix}-svc-control-api"
+  service_control_keycloak_issuer = "${local.keycloak_base_url_effective}/realms/${local.control_site_keycloak_realm}"
   service_control_api_service_flags = {
     n8n          = var.create_n8n
     zulip        = var.create_zulip
@@ -290,6 +292,7 @@ resource "aws_lambda_function" "service_control" {
   handler       = "service_control_lambda.handler"
   runtime       = "python3.12"
   timeout       = 10
+  reserved_concurrent_executions = var.service_control_lambda_reserved_concurrency
 
   filename         = data.archive_file.service_control_lambda.output_path
   source_code_hash = data.archive_file.service_control_lambda.output_base64sha256
@@ -380,6 +383,15 @@ resource "aws_lambda_permission" "service_control_scheduler" {
   source_arn    = aws_cloudwatch_event_rule.service_control_scheduler[0].arn
 }
 
+resource "aws_cloudwatch_log_group" "service_control_api" {
+  count = local.service_control_enabled ? 1 : 0
+
+  name              = local.service_control_api_log_group
+  retention_in_days = 30
+
+  tags = merge(local.tags, { Name = "${local.service_control_api_name}-api-logs" })
+}
+
 resource "aws_apigatewayv2_api" "service_control" {
   count = local.service_control_enabled ? 1 : 0
 
@@ -405,19 +417,56 @@ resource "aws_apigatewayv2_integration" "service_control" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_authorizer" "service_control_jwt" {
+  count = local.service_control_enabled ? 1 : 0
+
+  api_id           = aws_apigatewayv2_api.service_control[0].id
+  name             = "${local.service_control_api_name}-jwt"
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+
+  jwt_configuration {
+    audience = [
+      local.service_control_keycloak_client_id_effective,
+      "account"
+    ]
+    issuer   = local.service_control_keycloak_issuer
+  }
+}
+
 resource "aws_apigatewayv2_route" "service_control" {
   for_each = local.service_control_enabled ? {
-    "GET /status"    = "GET /status",
-    "POST /start"    = "POST /start",
-    "POST /stop"     = "POST /stop",
-    "GET /schedule"  = "GET /schedule",
-    "POST /schedule" = "POST /schedule",
-    "POST /token"    = "POST /token",
+    "GET /status" = {
+      route = "GET /status"
+      auth  = true
+    }
+    "POST /start" = {
+      route = "POST /start"
+      auth  = true
+    }
+    "POST /stop" = {
+      route = "POST /stop"
+      auth  = true
+    }
+    "GET /schedule" = {
+      route = "GET /schedule"
+      auth  = true
+    }
+    "POST /schedule" = {
+      route = "POST /schedule"
+      auth  = true
+    }
+    "POST /token" = {
+      route = "POST /token"
+      auth  = false
+    }
   } : {}
 
-  api_id    = aws_apigatewayv2_api.service_control[0].id
-  route_key = each.value
-  target    = "integrations/${aws_apigatewayv2_integration.service_control[0].id}"
+  api_id             = aws_apigatewayv2_api.service_control[0].id
+  route_key          = each.value.route
+  target             = "integrations/${aws_apigatewayv2_integration.service_control[0].id}"
+  authorization_type = each.value.auth ? "JWT" : "NONE"
+  authorizer_id      = each.value.auth ? aws_apigatewayv2_authorizer.service_control_jwt[0].id : null
 }
 
 resource "aws_apigatewayv2_stage" "service_control" {
@@ -426,6 +475,25 @@ resource "aws_apigatewayv2_stage" "service_control" {
   api_id      = aws_apigatewayv2_api.service_control[0].id
   name        = local.service_control_api_stage_name
   auto_deploy = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.service_control_api[0].arn
+    format = jsonencode({
+      requestId          = "$context.requestId"
+      requestTime        = "$context.requestTime"
+      httpMethod         = "$context.httpMethod"
+      path               = "$context.path"
+      status             = "$context.status"
+      integrationError   = "$context.integrationErrorMessage"
+      errorMessage       = "$context.error.message"
+      errorMessageString = "$context.error.messageString"
+      routeKey           = "$context.routeKey"
+      integrationStatus  = "$context.integrationStatus"
+      responseLength     = "$context.responseLength"
+      userAgent          = "$context.identity.userAgent"
+      sourceIp           = "$context.identity.sourceIp"
+    })
+  }
 
   tags = merge(local.tags, { Name = "${local.service_control_api_name}-stage" })
 }

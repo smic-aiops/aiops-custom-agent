@@ -160,8 +160,12 @@ def _schedule_parameter_name(service_key):
 
 DEFAULT_SCHEDULE = {
     "enabled": False,
-    "start_time": "09:00",
+    "start_time": "17:00",
     "stop_time": "22:00",
+    "weekday_start_time": "17:00",
+    "weekday_stop_time": "22:00",
+    "holiday_start_time": "08:00",
+    "holiday_stop_time": "23:00",
     "idle_minutes": 60,
 }
 TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
@@ -194,12 +198,10 @@ def _update_schedule(service_key, payload):
     schedule = _get_schedule(service_key)
     if "enabled" in payload:
         schedule["enabled"] = bool(payload["enabled"])
-    if "start_time" in payload and payload["start_time"] is not None:
-        _validate_time(payload["start_time"])
-        schedule["start_time"] = payload["start_time"]
-    if "stop_time" in payload and payload["stop_time"] is not None:
-        _validate_time(payload["stop_time"])
-        schedule["stop_time"] = payload["stop_time"]
+    for key in ["start_time", "stop_time", "weekday_start_time", "weekday_stop_time", "holiday_start_time", "holiday_stop_time"]:
+        if key in payload and payload[key] is not None:
+            _validate_time(payload[key])
+            schedule[key] = payload[key]
     if "idle_minutes" in payload and payload["idle_minutes"] is not None:
         schedule["idle_minutes"] = int(payload["idle_minutes"])
     _put_schedule(service_key, schedule)

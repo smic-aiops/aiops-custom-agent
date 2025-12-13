@@ -34,11 +34,17 @@
     .ops-status { display: inline-block; margin: 0.45rem 0 0; padding: 0.25rem 0.6rem; border-radius: 4px; font-weight: 600; font-size: 0.95rem; }
     .ops-status--active { background: #e6f4ea; color: #0f5132; }
     .ops-status--pending { background: #f5f5f5; color: #444; }
+    .ops-status--error { background: #fbeaea; color: #842029; }
+    .ops-status--starting { background: #fff4e5; color: #8a4b00; }
+    .ops-status--stopped { background: #f5f5f5; color: #444; }
     .schedule { margin-top: 0.8rem; padding-top: 0.75rem; border-top: 1px dashed #ddd; display: flex; flex-direction: column; gap: 0.4rem; }
     .auto-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.95rem; font-weight: 600; }
     .schedule-inputs { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.9rem; }
     .schedule-inputs label { display: flex; align-items: center; gap: 0.2rem; }
     .schedule-inputs input { padding: 0.25rem 0.35rem; font-size: 0.9rem; }
+    .schedule-rows { display: flex; flex-direction: column; gap: 0.35rem; width: 100%; }
+    .schedule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .schedule-row strong { min-width: 4.5rem; display: inline-block; }
     .idle-field.hidden { display: none; }
     .schedule-status { font-size: 0.85rem; color: #444; }
     .auth-status { font-size: 0.95rem; color: #0f5132; background: #e4f0e5; padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid #cfe3ce; margin-bottom: 1rem; }
@@ -67,6 +73,8 @@
     const KEYCLOAK_TOKEN_ENDPOINT = KEYCLOAK_BASE_CLEAN && KEYCLOAK_REALM_CLEAN
       ? `$${KEYCLOAK_BASE_CLEAN}/realms/$${KEYCLOAK_REALM_CLEAN}/protocol/openid-connect/token`
       : '';
+    const API_MAX_RETRY = 3;
+    const API_RETRY_BASE_MS = 300;
     const TOKEN_REFRESH_MS = 5 * 60 * 1000;
     const services = [
       { key: 'keycloak', name: 'Keycloak', host: 'keycloak', path: '/admin/', desc: 'ID管理・認証／認可・情報セキュリティ' },
@@ -84,7 +92,8 @@
       { key: 'phpmyadmin', name: 'phpMyAdmin', host: 'phpmyadmin', desc: 'MySQL/MariaDB 管理' },
     ];
     const serviceAutoStopCapabilities = ${service_control_autostop_flags};
-    const operationalKeys = new Set(['keycloak', 'zulip', 'n8n', 'pgadmin', 'phpmyadmin']);
+    const apiEnabledServices = new Set(${service_control_enabled_svcs});
+    const lockedScheduleServices = new Set(['keycloak', 'n8n', 'zulip']);
     const UI_LOCALE = 'ja-JP';
     const UI_TIMEZONE = 'Asia/Tokyo';
     const timezoneFormatter = new Intl.DateTimeFormat(UI_LOCALE, {
@@ -119,8 +128,10 @@
       return minutes === null ? '' : formatTimeValue(minutes);
     }
 
-    const DEFAULT_START_JST = '09:00';
-    const DEFAULT_STOP_JST = '22:00';
+    const DEFAULT_WEEKDAY_START_JST = '17:00';
+    const DEFAULT_WEEKDAY_STOP_JST = '22:00';
+    const DEFAULT_HOLIDAY_START_JST = '08:00';
+    const DEFAULT_HOLIDAY_STOP_JST = '23:00';
     const DEFAULT_IDLE_MINUTES = 60;
     const jstClockEl = document.getElementById('jst-clock');
     function updateJstClock() {
@@ -131,12 +142,16 @@
       updateJstClock();
       setInterval(updateJstClock, 1000);
     }
-    const servicesWithStatus = services.map(s => ({
-      ...s,
-      opsStatus: operationalKeys.has(s.key) ? '運用中' : '未実装',
-      autostopSupported: Boolean(serviceAutoStopCapabilities[s.key]),
-    }));
+    const servicesWithStatus = services.map(s => {
+      const apiEnabled = apiEnabledServices.has(s.key);
+      return {
+        ...s,
+        apiEnabled,
+        autostopSupported: Boolean(serviceAutoStopCapabilities[s.key]),
+      };
+    });
     const serviceMap = Object.fromEntries(servicesWithStatus.map(s => [s.key, s]));
+    const apiEnabledList = servicesWithStatus.filter(s => s.apiEnabled);
     const groups = [
       { title: 'General Management（一般管理）', items: ['keycloak', 'zulip', 'growi', 'odoo', 'orangehrm'] },
       { title: 'Service Management（サービス管理）', items: ['cmdbuild-r2u', 'n8n', 'sulu'] },
@@ -193,6 +208,18 @@
       persistTokens();
     }
 
+    function removeLogoutButton() {
+      const btn = document.getElementById('logout-btn');
+      if (btn) btn.remove();
+    }
+
+    function forceLogin(message = 'ログインしてください') {
+      clearTokens();
+      removeLogoutButton();
+      setAuthMessage(message);
+      renderLoginForm(message);
+    }
+
     async function requestToken(payload) {
       if (!KEYCLOAK_TOKEN_ENDPOINT) {
         throw new Error('Keycloak のトークンエンドポイントが構成されていません。');
@@ -231,7 +258,7 @@
           refresh_token: refreshToken,
         });
       } catch {
-        clearTokens();
+        forceLogin('トークンの更新に失敗しました。再ログインしてください。');
         throw new Error('トークンの更新に失敗しました。再ログインしてください。');
       }
       accessToken = data.access_token || null;
@@ -290,8 +317,8 @@
           loginContainer.innerHTML = '';
           renderCards();
           bindEvents();
-          servicesWithStatus.forEach(s => updateStatus(s.key));
-          servicesWithStatus.forEach(s => fetchSchedule(s.key));
+          apiEnabledList.forEach(s => updateStatus(s.key));
+          apiEnabledList.forEach(s => fetchSchedule(s.key));
           scheduleTokenRefresh();
         } catch (e) {
           clearTokens();
@@ -327,6 +354,19 @@
       }, TOKEN_REFRESH_MS);
     }
 
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function retryDelay(attempt) {
+      const jitter = Math.random() * 100;
+      return API_RETRY_BASE_MS * Math.pow(2, attempt) + jitter;
+    }
+
+    function isRetryableStatus(status) {
+      return status >= 500 || status === 429;
+    }
+
     function log(msg) {
       console.log(msg);
     }
@@ -337,33 +377,66 @@
         throw new Error('API のベース URL が設定されていません。');
       }
       if (!accessToken) {
+        forceLogin('ログインしてください');
         throw new Error('ログインしてください');
       }
-      await refreshAccessTokenIfNeeded();
       try {
-        const base = API_BASE_CLEAN || API_BASE;
-        const url = `$${base}$${path}?service=$${encodeURIComponent(service)}`;
-        const headers = payload !== null ? { 'Content-Type': 'application/json' } : {};
-        headers.Authorization = `Bearer $${accessToken}`;
-        const options = { method };
-        if (Object.keys(headers).length > 0) {
-          options.headers = headers;
-        }
-        if (payload !== null) {
-          options.body = JSON.stringify(payload);
-        }
-        const res = await fetch(url, options);
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.message || res.statusText);
-        return body;
+        await refreshAccessTokenIfNeeded();
       } catch (err) {
         log(`エラー: $${err.message}`);
         throw err;
       }
+      const base = API_BASE_CLEAN || API_BASE;
+      const url = `$${base}$${path}?service=$${encodeURIComponent(service)}`;
+      const headers = payload !== null ? { 'Content-Type': 'application/json' } : {};
+      headers.Authorization = `Bearer $${accessToken}`;
+      const options = { method };
+      if (Object.keys(headers).length > 0) {
+        options.headers = headers;
+      }
+      if (payload !== null) {
+        options.body = JSON.stringify(payload);
+      }
+      let lastError = null;
+      for (let attempt = 0; attempt < API_MAX_RETRY; attempt += 1) {
+        try {
+          const res = await fetch(url, options);
+          const body = await res.json().catch(() => ({}));
+          if (res.status === 401 || res.status === 403) {
+            forceLogin(body.message || '認証が無効になりました。再ログインしてください。');
+            const err = new Error(body.message || res.statusText);
+            err.retryable = false;
+            throw err;
+          }
+          if (!res.ok) {
+            if (isRetryableStatus(res.status) && attempt < API_MAX_RETRY - 1) {
+              await sleep(retryDelay(attempt));
+              continue;
+            }
+            const err = new Error(body.message || res.statusText);
+            err.retryable = false;
+            throw err;
+          }
+          return body;
+        } catch (err) {
+          lastError = err;
+          const shouldRetry = (err?.retryable ?? true) && attempt < API_MAX_RETRY - 1;
+          if (shouldRetry) {
+            await sleep(retryDelay(attempt));
+            continue;
+          }
+        }
+      }
+      if (lastError?.message && lastError.message.includes('ログイン')) {
+        forceLogin(lastError.message);
+      }
+      log(`エラー: $${lastError?.message || 'unknown error'}`);
+      throw lastError || new Error('unknown error');
     }
 
     function renderHealth(service, data) {
       const el = document.querySelector(`[data-health="$${service}"]`);
+      if (!el) return;
       if (!data || !data.targetGroupHealth) {
         el.textContent = 'TG: 情報なし';
         return;
@@ -372,35 +445,98 @@
       el.textContent = `TG: healthy=$${sum.healthy || 0}, unhealthy=$${sum.unhealthy || 0}, total=$${sum.total || 0}`;
     }
 
+    function updateOpsStatusUI(service, label, variant = 'pending') {
+      if (!cardsEl) return;
+      const el = cardsEl.querySelector('[data-ops-status="' + service + '"]');
+      if (!el) return;
+      const normalizedVariant = variant || 'pending';
+      el.textContent = '運用ステータス：' + label;
+      el.className = 'ops-status ops-status--' + normalizedVariant;
+    }
+
+    function deriveOpsStatus(summary) {
+      if (!summary) return { label: '状態不明', variant: 'pending' };
+      const healthy = Number(summary.healthy) || 0;
+      const unhealthy = Number(summary.unhealthy) || 0;
+      const total = Number(summary.total) || 0;
+      if (healthy >= 1) {
+        return { label: '稼働中', variant: 'active' };
+      }
+      if (unhealthy >= 1) {
+        return { label: 'エラー', variant: 'error' };
+      }
+      if (total >= 1 && healthy === 0) {
+        return { label: '起動中', variant: 'starting' };
+      }
+      return { label: '停止中', variant: 'stopped' };
+    }
+
+    function applyOpsStatus(service, summary) {
+      const derived = deriveOpsStatus(summary);
+      updateOpsStatusUI(service, derived.label, derived.variant);
+    }
+
     function applyScheduleToUI(service, schedule) {
       const checkbox = cardsEl.querySelector('[data-action="toggle-auto"][data-service="' + service + '"]');
-      const startInput = cardsEl.querySelector('[data-action="set-start"][data-service="' + service + '"]');
-      const stopInput = cardsEl.querySelector('[data-action="set-stop"][data-service="' + service + '"]');
+      const weekdayStartInput = cardsEl.querySelector('[data-action="set-weekday-start"][data-service="' + service + '"]');
+      const weekdayStopInput = cardsEl.querySelector('[data-action="set-weekday-stop"][data-service="' + service + '"]');
+      const holidayStartInput = cardsEl.querySelector('[data-action="set-holiday-start"][data-service="' + service + '"]');
+      const holidayStopInput = cardsEl.querySelector('[data-action="set-holiday-stop"][data-service="' + service + '"]');
       const idleInput = cardsEl.querySelector('[data-action="set-idle"][data-service="' + service + '"]');
       const statusEl = cardsEl.querySelector('[data-schedule-status="' + service + '"]');
       const enabled = Boolean(schedule && schedule.enabled);
-      const startValue = normalizeTime((schedule && schedule.start_time) || DEFAULT_START_JST) || DEFAULT_START_JST;
-      const stopValue = normalizeTime((schedule && schedule.stop_time) || DEFAULT_STOP_JST) || DEFAULT_STOP_JST;
+      const locked = lockedScheduleServices.has(service);
+      const baseStart = normalizeTime((schedule && schedule.start_time) || DEFAULT_WEEKDAY_START_JST) || DEFAULT_WEEKDAY_START_JST;
+      const baseStop = normalizeTime((schedule && schedule.stop_time) || DEFAULT_WEEKDAY_STOP_JST) || DEFAULT_WEEKDAY_STOP_JST;
+      const weekdayStart = normalizeTime((schedule && (schedule.weekday_start_time || schedule.start_time)) || DEFAULT_WEEKDAY_START_JST) || DEFAULT_WEEKDAY_START_JST;
+      const weekdayStop = normalizeTime((schedule && (schedule.weekday_stop_time || schedule.stop_time)) || DEFAULT_WEEKDAY_STOP_JST) || DEFAULT_WEEKDAY_STOP_JST;
+      const holidayStart = normalizeTime((schedule && (schedule.holiday_start_time || schedule.start_time)) || DEFAULT_HOLIDAY_START_JST) || DEFAULT_HOLIDAY_START_JST;
+      const holidayStop = normalizeTime((schedule && (schedule.holiday_stop_time || schedule.stop_time)) || DEFAULT_HOLIDAY_STOP_JST) || DEFAULT_HOLIDAY_STOP_JST;
       const idleValue = (schedule && schedule.idle_minutes) || DEFAULT_IDLE_MINUTES;
-      if (checkbox) checkbox.checked = Boolean(enabled);
-      if (startInput) {
-        startInput.value = startValue;
-        startInput.disabled = !enabled;
+      if (checkbox) {
+        checkbox.checked = Boolean(enabled);
+        checkbox.disabled = locked;
       }
-      if (stopInput) {
-        stopInput.value = stopValue;
-        stopInput.disabled = !enabled;
+      if (weekdayStartInput) {
+        weekdayStartInput.value = weekdayStart;
+        weekdayStartInput.disabled = locked;
+      }
+      if (weekdayStopInput) {
+        weekdayStopInput.value = weekdayStop;
+        weekdayStopInput.disabled = locked;
+      }
+      if (holidayStartInput) {
+        holidayStartInput.value = holidayStart;
+        holidayStartInput.disabled = locked;
+      }
+      if (holidayStopInput) {
+        holidayStopInput.value = holidayStop;
+        holidayStopInput.disabled = locked;
       }
       if (idleInput) {
         idleInput.value = idleValue;
+        const idleSupported = Boolean(serviceAutoStopCapabilities[service]);
+        idleInput.disabled = locked || !idleSupported;
       }
       updateIdleField(service);
       if (statusEl) {
-        statusEl.textContent = enabled
-          ? `自動 (JST): $${startValue} → $${stopValue} ($${idleValue}分アイドル)`
-          : '自動起動/停止はオフ';
+        if (locked) {
+          statusEl.textContent = `自動スケジュールは固定（変更不可）。現在: $${enabled ? "オン" : "オフ"} / 平日 $${weekdayStart}→$${weekdayStop} / 土日祝 $${holidayStart}→$${holidayStop}`;
+        } else {
+          statusEl.textContent = enabled
+            ? `自動 (JST): 平日 $${weekdayStart}→$${weekdayStop} / 土日祝 $${holidayStart}→$${holidayStop} (アイドル $${idleValue}分)`
+            : '自動起動/停止はオフ';
+        }
       }
-      scheduleState.set(service, schedule || {});
+      scheduleState.set(service, {
+        ...schedule,
+        start_time: baseStart,
+        stop_time: baseStop,
+        weekday_start_time: weekdayStart,
+        weekday_stop_time: weekdayStop,
+        holiday_start_time: holidayStart,
+        holiday_stop_time: holidayStop,
+      });
     }
 
     async function fetchSchedule(service) {
@@ -431,9 +567,11 @@
         statusEl.textContent = `状態: desired=$${data.desiredCount}, running=$${data.runningCount}`;
         log(`[$${service}] 状態取得に成功: $${JSON.stringify(data)}`);
         renderHealth(service, data);
+        applyOpsStatus(service, data?.targetGroupHealth?.summary);
       } catch (_) {
         statusEl.textContent = '状態: エラー';
         renderHealth(service, null);
+        updateOpsStatusUI(service, '取得エラー', 'error');
       }
     }
 
@@ -461,10 +599,12 @@
             $${g.items.map(key => {
               const s = serviceMap[key];
               if (!s) return '';
+              const initialOpsStatus = s.apiEnabled ? '確認中' : '未実装';
+              const initialOpsVariant = 'pending';
               return `
                 <div class="card">
                   <h2>$${s.name}</h2>
-                  <div class="ops-status ops-status--$${s.opsStatus === '運用中' ? 'active' : 'pending'}">運用ステータス：$${s.opsStatus}</div>
+                  <div class="ops-status ops-status--$${initialOpsVariant}" data-ops-status="$${s.key}">運用ステータス：$${initialOpsStatus}</div>
                   <div class="health">$${s.desc || ''}</div>
                   <div class="actions">
                     <a class="link" href="https://$${s.host}.$${rootDomain}$${s.path || ''}" target="_blank" rel="noopener noreferrer">開く</a>
@@ -479,18 +619,31 @@
                       自動起動・停止
                     </label>
                     <div class="schedule-inputs">
-                      <label>起動
-                        <input type="time" data-action="set-start" data-service="$${s.key}" value="09:00" disabled>
-                      </label>
-                      <label>停止
-                        <input type="time" data-action="set-stop" data-service="$${s.key}" value="22:00" disabled>
-                      </label>
+                      <div class="schedule-rows">
+                        <div class="schedule-row">
+                          <strong>平日</strong>
+                          <label>起動
+                            <input type="time" data-action="set-weekday-start" data-service="$${s.key}" value="${DEFAULT_WEEKDAY_START_JST}">
+                          </label>
+                          <label>停止
+                            <input type="time" data-action="set-weekday-stop" data-service="$${s.key}" value="${DEFAULT_WEEKDAY_STOP_JST}">
+                          </label>
+                        </div>
+                        <div class="schedule-row">
+                          <strong>土日祝</strong>
+                          <label>起動
+                            <input type="time" data-action="set-holiday-start" data-service="$${s.key}" value="${DEFAULT_HOLIDAY_START_JST}">
+                          </label>
+                          <label>停止
+                            <input type="time" data-action="set-holiday-stop" data-service="$${s.key}" value="${DEFAULT_HOLIDAY_STOP_JST}">
+                          </label>
+                        </div>
+                      </div>
                       <label class="idle-field">アイドル
-                        <input type="number" min="1" data-action="set-idle" data-service="$${s.key}" value="60" disabled>分
+                        <input type="number" min="1" data-action="set-idle" data-service="$${s.key}" value="${DEFAULT_IDLE_MINUTES}">分
                       </label>
                     </div>
                     <div class="schedule-status" data-schedule-status="$${s.key}">スケジュール情報を読み込み中...</div>
-                    <div class="schedule-hint">表示/入力/送信とも日本標準時 (JST) です。</div>
                   </div>
                   <div class="health" data-health="$${s.key}">TG: -</div>
                 </div>
@@ -499,7 +652,12 @@
           </div>
         </div>
       `).join('');
-      servicesWithStatus.forEach(s => updateIdleField(s.key));
+      servicesWithStatus.forEach(s => {
+        updateIdleField(s.key);
+        if (!s.apiEnabled) {
+          markServiceApiUnavailable(s.key);
+        }
+      });
     }
 
     function updateIdleField(service) {
@@ -513,12 +671,28 @@
       }
     }
 
+    function markServiceApiUnavailable(service) {
+      cardsEl.querySelectorAll(`[data-service="$${service}"]`).forEach(el => {
+        if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) {
+          el.disabled = true;
+        }
+      });
+      const statusEl = cardsEl.querySelector(`[data-status="$${service}"]`);
+      if (statusEl) statusEl.textContent = '状態: API 未対応';
+      const scheduleEl = cardsEl.querySelector(`[data-schedule-status="$${service}"]`);
+      if (scheduleEl) scheduleEl.textContent = 'スケジュール: API 未対応';
+      const healthEl = cardsEl.querySelector(`[data-health="$${service}"]`);
+      if (healthEl) healthEl.textContent = 'TG: API 未対応';
+      updateOpsStatusUI(service, '未実装', 'pending');
+    }
+
     function bindEvents() {
       cardsEl.addEventListener('click', (ev) => {
         if (!(ev.target instanceof HTMLButtonElement)) return;
         const action = ev.target.dataset.action;
         const service = ev.target.dataset.service;
         if (!action || !service) return;
+        if (!apiEnabledServices.has(service)) return;
         if (action === 'start') startSvc(service);
         if (action === 'stop') stopSvc(service);
         if (action === 'status') updateStatus(service);
@@ -528,31 +702,44 @@
         const action = ev.target.dataset.action;
         const service = ev.target.dataset.service;
         if (!action || !service) return;
+        if (!apiEnabledServices.has(service)) return;
+        if (lockedScheduleServices.has(service)) return;
         if (action === 'toggle-auto') {
           sendScheduleUpdate(service, { enabled: ev.target.checked });
           return;
         }
-        if (action === 'set-start') {
-          const converted = ev.target.value ? normalizeTime(ev.target.value) : '';
-          if (converted) {
-            sendScheduleUpdate(service, { start_time: converted });
-          }
-          return;
-        }
-        if (action === 'set-stop') {
-          const converted = ev.target.value ? normalizeTime(ev.target.value) : '';
-          if (converted) {
-            sendScheduleUpdate(service, { stop_time: converted });
-          }
-          return;
-        }
         if (action === 'set-idle') {
           if (!serviceAutoStopCapabilities[service]) return;
-          if (ev.target.value !== '') {
-            sendScheduleUpdate(service, { idle_minutes: Number(ev.target.value) });
-          }
+          if (ev.target.value === '') return;
+          sendScheduleUpdate(service, { idle_minutes: Number(ev.target.value) });
+          return;
+        }
+        const converted = ev.target.value ? normalizeTime(ev.target.value) : '';
+        if (!converted) return;
+        if (action === 'set-weekday-start') {
+          sendScheduleUpdate(service, { weekday_start_time: converted });
+        } else if (action === 'set-weekday-stop') {
+          sendScheduleUpdate(service, { weekday_stop_time: converted });
+        } else if (action === 'set-holiday-start') {
+          sendScheduleUpdate(service, { holiday_start_time: converted });
+        } else if (action === 'set-holiday-stop') {
+          sendScheduleUpdate(service, { holiday_stop_time: converted });
         }
       });
+    }
+
+    async function refreshServiceData() {
+      // Lambda のスロット枯渇を防ぐためシリアルに呼び出す
+      for (const svc of apiEnabledList) {
+        if (!svc.apiEnabled) continue;
+        try {
+          await updateStatus(svc.key);
+          await fetchSchedule(svc.key);
+        } catch (err) {
+          const msg = (err && err.message) ? err.message : err;
+          log(`サービス $${svc.key} の更新に失敗: $${msg}`);
+        }
+      }
     }
 
     if (!API_BASE) {
@@ -562,7 +749,7 @@
       Array.from(cardsEl.querySelectorAll('[data-schedule-status]')).forEach(el => el.textContent = 'スケジュール: API が未設定です');
       Array.from(cardsEl.querySelectorAll('.status')).forEach(el => el.textContent = '状態: API が未設定です');
       setAuthMessage('サービスコントロール API が未設定です');
-      log('Terraform の sulu_control_api_base_url を設定するとコントロール API が有効になります。');
+      log('Terraform の service_control_api_base_url を設定するとコントロール API が有効になります。');
     } else {
       restoreTokens();
       if (accessToken) {
@@ -570,8 +757,7 @@
         renderLogoutButton();
         renderCards();
         bindEvents();
-        servicesWithStatus.forEach(s => updateStatus(s.key));
-        servicesWithStatus.forEach(s => fetchSchedule(s.key));
+        refreshServiceData();
         scheduleTokenRefresh();
       } else {
         setAuthMessage('ログインしてください');

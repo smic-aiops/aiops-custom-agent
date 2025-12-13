@@ -12,6 +12,7 @@ tfplan_unpack/
 # Local image tarballs
 images/
 modules/stack/templates/*.zip
+docker/sulu/source/
 
 # CLI history / OS cruft
 .DS_Store

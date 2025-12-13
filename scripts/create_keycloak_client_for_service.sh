@@ -248,7 +248,18 @@ set_service_defaults() {
       CLIENT_NAME="${USER_CLIENT_NAME:-サービスコントロール}"
       DIRECT_GRANTS_ENABLED="true"
       local required_origin="https://control.${HOSTED_ZONE_NAME}"
+      local api_base_origin=""
+      # API ベース URL も Web Origin に含めておく（API Gateway ドメインでのトークン取得/検証用）
+      if [[ -n "${SERVICE_URLS_JSON}" ]]; then
+        api_base_origin="$(echo "${SERVICE_URLS_JSON}" | jq -r --arg key "control_api" '.[$key] // empty' 2>/dev/null || true)"
+        api_base_origin="${api_base_origin%/}"
+      fi
       WEB_ORIGINS_VALUE="$(merge_csv_values "${WEB_ORIGINS_VALUE}" "${required_origin}")"
+      if [[ -n "${api_base_origin}" ]]; then
+        WEB_ORIGINS_VALUE="$(merge_csv_values "${WEB_ORIGINS_VALUE}" "${api_base_origin}")"
+      else
+        echo "[warn] control_api URL missing in SERVICE_URLS_JSON; API Gateway origin will not be added to Web Origins." >&2
+      fi
       if [[ -n "${USER_SERVICE_CONTROL_REDIRECT_URIS:-}" ]]; then
         REDIRECT_URIS_VALUE="${USER_SERVICE_CONTROL_REDIRECT_URIS}"
       fi
